@@ -4,15 +4,20 @@ import { Box, Text, useInput } from 'ink';
 interface LoginProps {
   onSubmit: (apiKey: string) => void;
   onCancel: () => void;
+  currentApiKey?: string;
 }
 
-export default function Login({ onSubmit, onCancel }: LoginProps) {
+export default function Login({ onSubmit, onCancel, currentApiKey }: LoginProps) {
   const [apiKey, setApiKey] = useState('');
+  const [showCurrentKey, setShowCurrentKey] = useState(true);
 
   useInput((input, key) => {
     if (key.return) {
       if (apiKey.trim()) {
         onSubmit(apiKey.trim());
+      } else if (currentApiKey && showCurrentKey) {
+        // User pressed Enter without typing, keep current key
+        onSubmit(currentApiKey);
       }
       return;
     }
@@ -35,13 +40,14 @@ export default function Login({ onSubmit, onCancel }: LoginProps) {
     // Regular character input
     if (input && !key.meta && !key.ctrl) {
       setApiKey((prev) => prev + input);
+      setShowCurrentKey(false); // Hide current key when user starts typing
     }
   });
 
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={1}>
-        <Text color="cyan" bold>Login with OpenAI API Key</Text>
+        <Text color="cyan" bold>Set API Key</Text>
       </Box>
 
       <Box marginBottom={1}>
@@ -50,6 +56,26 @@ export default function Login({ onSubmit, onCancel }: LoginProps) {
         </Text>
       </Box>
 
+      {currentApiKey && showCurrentKey && (
+        <Box marginBottom={1} flexDirection="column">
+          <Box>
+            <Text color="gray" dimColor>
+              Current API Key:{' '}
+              <Text color="yellow">
+          {'*'.repeat(Math.min(currentApiKey.length, 20))}
+          {currentApiKey.length > 20 && '...'}
+              </Text>{' '}
+              <Text color="green">(current)</Text>
+            </Text>
+          </Box>
+          <Box>
+            <Text color="gray" dimColor>
+              Start typing to enter a new key, or press Enter to keep current
+            </Text>
+          </Box>
+        </Box>
+      )}
+
       <Box>
         <Text color="cyan">API Key: </Text>
         <Text>
@@ -57,6 +83,12 @@ export default function Login({ onSubmit, onCancel }: LoginProps) {
           {apiKey.length > 20 && '...'}
         </Text>
         <Text backgroundColor="cyan" color="cyan">▌</Text>
+      </Box>
+
+      <Box marginTop={1}>
+        <Text color="gray" dimColor>
+          Press Enter to {apiKey.trim() ? 'save' : 'keep current'}, Escape to cancel
+        </Text>
       </Box>
     </Box>
   );
