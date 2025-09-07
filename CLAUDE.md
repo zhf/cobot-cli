@@ -47,8 +47,10 @@ The application includes 9 built-in tools:
 
 Available slash commands:
 - `/help` - Show help and available commands
-- `/login` - Login with OpenAI API key
-- `/model` - Select OpenAI model
+- `/apikey` - Set your OpenAI API key
+- `/login` - Login with your credentials (feature not implemented)
+- `/model` - Select OpenAI model (dynamically fetched from API)
+- `/baseurl` - Set custom OpenAI API base URL
 - `/clear` - Clear chat history and context
 - `/reasoning` - Toggle display of reasoning content
 - `/stats` - Display session statistics and token usage
