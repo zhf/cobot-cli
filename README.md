@@ -70,18 +70,33 @@ Options:
   -V, --version                 Display version number
 ```
 
-### Authentication (Not implemented yet)
+### Getting Started
 
-On first use, start a chat session:
+On first use, we recommend setting up your API configuration in this order:
+
+1. **Set your API key**:
 ```bash
 cobot
 ```
+Then use the `/apikey` command to set your OpenAI API key.
 
-Then use the `/login` command to authenticate with Cobot account:
+2. **Set your base URL** (if using a custom API endpoint):
+```bash
+/baseurl
+```
+This allows you to use custom OpenAI-compatible APIs like BigModel, Groq, etc.
 
-This creates a `.cobot/` folder in your home directory to store your API key and configuration.
+3. **Select your model**:
+```bash
+/model
+```
+Choose from available models or enter a custom model name.
 
-You can also set your API key via environment variable:
+This creates a `.cobot/` folder in your home directory to store your configuration.
+
+#### Environment Variables
+
+You can also set configuration via environment variables:
 
 ```bash
 export COBOT_OPENAI_API_KEY=your_api_key_here
@@ -97,9 +112,14 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 
 ### Available Commands
 
+#### Configuration Commands
+- `/apikey` - Set your OpenAI API key
+- `/baseurl` - Set custom OpenAI API base URL (for using alternate providers)
+- `/model` - Select your AI model from available options or enter custom model name
+
+#### Session Commands
 - `/help` - Show help and available commands
-- `/login` - Login with your Cobot account
-- `/model` - Select your OpenAI model
+- `/login` - Login with your Cobot account (feature not implemented yet)
 - `/clear` - Clear chat history and context
 - `/reasoning` - Toggle display of reasoning content in messages
 - `/stats` - Display session statistics and token usage
@@ -141,10 +161,12 @@ Cobot CLI comes with 17 built-in tools that allow the assistant to interact with
 
 ### Model Selection
 
-Choose from various OpenAI models (Sample list):
-- `gpt-5-chat` - Latest high-intelligence model
-- `gpt-4o` - High-intelligence flagship model for complex tasks
-- `gpt-4o-mini` - Affordable small model for fast, lightweight tasks
+The `/model` command dynamically fetches available models from your configured API endpoint:
+
+- **OpenAI API**: Shows GPT models (gpt-4o, gpt-4o-mini, etc.)
+- **Custom APIs**: Shows provider-specific models (e.g., glm-4.5, glm-4.5-air for BigModel)
+- **Fallback Options**: Common models if API fetch fails
+- **Custom Entry**: Option to manually enter any model name
 
 You can specify the model to use either through the `/model` command during chat or via the `--model` command line option when starting the CLI.
 
@@ -164,6 +186,8 @@ cobot-cli/
 ├── src/
 │   ├── commands/           
 │   │   ├── definitions/        # Individual command implementations
+│   │   │   ├── apikey.ts       # API key configuration command
+│   │   │   ├── baseurl.ts      # Base URL configuration command
 │   │   │   ├── clear.ts        # Clear chat history command
 │   │   │   ├── help.ts         # Help command
 │   │   │   ├── login.ts        # Authentication command
@@ -185,9 +209,15 @@ cobot-cli/
 │   │   │   ├── core/           # Core chat TUI components
 │   │   │   ├── display/        # Auxiliary components for TUI display
 │   │   │   └── input-overlays/ # Input overlays and modals that occupy the MessageInput box
+│   │   ├── overlays/           # Modal overlays for configuration commands
+│   │   │   ├── BaseURLSelector.tsx  # Base URL selection modal
+│   │   │   ├── Login.tsx           # API key input modal
+│   │   │   └── ModelSelector.tsx   # Model selection modal
 │   │   └── hooks/          
 │   └── utils/              
 │       ├── constants.ts        # Application constants
+│       ├── config/             # Configuration management
+│       │   └── ConfigManager.ts    # Handles API key, base URL, and model configuration
 │       ├── file-ops.ts         # File system operations
 │       ├── local-settings.ts   # Local configuration management
 │       └── markdown.ts         # Markdown processing utilities
