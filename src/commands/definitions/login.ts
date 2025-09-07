@@ -3,8 +3,11 @@ import { CommandDefinition, CommandContext } from '../base.js';
 const loginCommand: CommandDefinition = {
   command: 'login',
   description: 'Login with your credentials',
-  handler: ({ setShowLogin }: CommandContext) => {
-    setShowLogin(true);
+  handler: ({ addMessage }: CommandContext) => {
+    addMessage({
+      role: 'system',
+      content: 'Login feature not implemented yet. Use /apikey to set your OpenAI API key.',
+    });
   },
 };
 
