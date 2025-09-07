@@ -1,6 +1,6 @@
 {
 	"name": "cobot-cli",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "A CLI coding and everyday office assistant powered by OpenAI",
 	"license": "MIT",
 	"bin": {
@@ -36,6 +36,5 @@
 		"chalk": "^5.2.0",
 		"ts-node": "^10.9.1",
 		"typescript": "^5.0.3"
-	},
-	"prettier": "@vdemedes/prettier-config"
+	}
 }
