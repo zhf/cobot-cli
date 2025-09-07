@@ -376,5 +376,6 @@ export function useAgent(
     toggleAutoApprove,
     toggleReasoning,
     interruptRequest,
+    agent,
   };
 }
