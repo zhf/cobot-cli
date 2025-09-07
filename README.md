@@ -92,7 +92,13 @@ This allows you to use custom OpenAI-compatible APIs like BigModel, Groq, etc.
 ```
 Choose from available models or enter a custom model name.
 
-This creates a `.cobot/` folder in your home directory to store your configuration.
+4. **Customize your theme** (optional):
+```bash
+/theme
+```
+Toggle between light and dark themes. Your preference is automatically saved.
+
+This creates a `.cobot/` folder in your home directory to store your configuration, including your theme preference.
 
 #### Environment Variables
 
@@ -123,8 +129,21 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 - `/clear` - Clear chat history and context
 - `/reasoning` - Toggle display of reasoning content in messages
 - `/stats` - Display session statistics and token usage
+- `/theme` - Toggle between light and dark themes (preference is automatically saved)
 
 ## Features
+
+### Theme System
+
+Cobot CLI includes a built-in theme system with accessibility improvements and persistent preferences:
+
+- **Light and Dark Themes**: Toggle between light and dark color schemes
+- **Accessibility Optimized**: High contrast colors that meet WCAG standards
+- **Persistent Preferences**: Theme choice is automatically saved and restored across sessions
+- **Cursor Visibility**: Enhanced cursor visibility in both themes
+- **Real-time Switching**: Instant theme changes without restarting the application
+
+Use `/theme` to switch between themes - your preference is automatically saved to `~/.cobot/config.json`.
 
 ### Built-in Tools
 
@@ -177,6 +196,24 @@ You can specify the model to use either through the `/model` command during chat
 - Command execution safety limits (no long-running processes)
 - Secure storage of API keys with restrictive file permissions
 
+### Configuration Storage
+
+All preferences are stored in `~/.cobot/config.json` with secure file permissions (`0o600`):
+
+```json
+{
+  "openaiApiKey": "sk-...",
+  "defaultModel": "gpt-4o",
+  "openaiBaseURL": "https://api.openai.com/v1",
+  "theme": "dark"
+}
+```
+
+- **API Configuration**: API keys, base URLs, and model preferences
+- **Theme Settings**: Light/dark theme preference (automatically persisted)
+- **Security**: Owner-only read/write permissions for sensitive data
+- **Migration**: Existing configurations remain compatible
+
 ## Development
 
 ### Project Structure
@@ -193,7 +230,8 @@ cobot-cli/
 │   │   │   ├── login.ts        # Authentication command
 │   │   │   ├── model.ts        # Model selection command
 │   │   │   ├── reasoning.ts    # Reasoning toggle command
-│   │   │   └── stats.ts        # Statistics command
+│   │   │   ├── stats.ts        # Statistics command
+│   │   │   └── theme.ts        # Theme toggle command
 │   │   ├── base.ts             # Base command interface
 │   │   └── index.ts            # Command exports
 │   ├── core/               
@@ -213,11 +251,13 @@ cobot-cli/
 │   │   │   ├── BaseURLSelector.tsx  # Base URL selection modal
 │   │   │   ├── Login.tsx           # API key input modal
 │   │   │   └── ModelSelector.tsx   # Model selection modal
-│   │   └── hooks/          
+│   │   ├── hooks/             # Custom React hooks
+│   │   │   └── useTheme.ts      # Theme management hook
+│   │   └── theme.ts           # Theme color definitions
 │   └── utils/              
 │       ├── constants.ts        # Application constants
 │       ├── config/             # Configuration management
-│       │   └── ConfigManager.ts    # Handles API key, base URL, and model configuration
+│       │   └── ConfigManager.ts    # Handles API key, base URL, model, and theme configuration
 │       ├── file-ops.ts         # File system operations
 │       ├── local-settings.ts   # Local configuration management
 │       └── markdown.ts         # Markdown processing utilities

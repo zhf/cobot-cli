@@ -6,6 +6,8 @@ import { Agent } from '../../core/agent.js';
 import { useAgent } from '../hooks/useAgent.js';
 import useTokenMetrics from '../hooks/useTokenMetrics.js';
 import useSessionStats from '../hooks/useSessionStats.js';
+import { ThemeProvider, useTheme } from '../hooks/useTheme.js';
+import ConfigManager from '../../config/ConfigManager.js';
 import MessageHistory from './MessageHistory.js';
 import MessageInput from './MessageInput.js';
 import TokenMetrics from '../display/TokenMetrics.js';
@@ -21,7 +23,8 @@ interface ChatProps {
   agent: Agent;
 }
 
-export default function Chat({ agent }: ChatProps) {
+function ChatContent({ agent }: ChatProps) {
+  const { colors, isDarkTheme, toggleTheme } = useTheme();
   const {
     completionTokens: currentCompletionTokens,
     startTime,
@@ -146,6 +149,8 @@ export default function Chat({ agent }: ChatProps) {
           setShowBaseURLSelector,
           toggleReasoning,
           showReasoning,
+          toggleTheme,
+          isDarkTheme,
           sessionStats,
         });
         return;
@@ -306,23 +311,35 @@ export default function Chat({ agent }: ChatProps) {
           />
         ) : (
           <Box>
-            <Text color="gray" dimColor>Processing...</Text>
+            <Text color={colors.muted} dimColor>Processing...</Text>
           </Box>
         )}
       </Box>
 
       <Box justifyContent="space-between" paddingX={1}>
         <Box>
-          <Text color="cyan" bold>
+          <Text color={colors.primary} bold>
             {sessionAutoApprove ? 'auto-approve edits is on' : ''}
           </Text>
         </Box>
         <Box>
-          <Text color="gray" dimColor>
-            {agent.getCurrentModel?.() || ''}
+          <Text color={colors.muted} dimColor>
+            {isDarkTheme ? '🌙 dark' : '☀️ light'} theme | {agent.getCurrentModel?.() || ''}
           </Text>
         </Box>
       </Box>
     </Box>
+  );
+}
+
+export default function Chat({ agent }: ChatProps) {
+  const configManager = new ConfigManager();
+  const savedTheme = configManager.getTheme();
+  const initialDarkTheme = savedTheme === 'dark';
+
+  return (
+    <ThemeProvider initialDarkTheme={initialDarkTheme}>
+      <ChatContent agent={agent} />
+    </ThemeProvider>
   );
 }

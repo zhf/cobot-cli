@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { getCommandNames } from '../../commands/index.js';
 import SlashCommandSuggestions from '../overlays/SlashCommandSuggestions.js';
+import { useTheme } from '../hooks/useTheme.js';
 
 interface MessageInputProps {
   value: string;
@@ -18,6 +19,7 @@ export default function MessageInput({
   placeholder = '... (Esc to clear, Ctrl+C to exit)',
   userMessageHistory = [],
 }: MessageInputProps) {
+  const { colors } = useTheme();
   const [selectedSuggestionIndex, setSelectedCommandIndex] = useState(0);
   const [messageHistoryIndex, setHistoryIndex] = useState(-1);
   const [unsavedDraftMessage, setDraftMessage] = useState('');
@@ -145,17 +147,17 @@ export default function MessageInput({
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color="cyan" bold>{'>'} </Text>
+        <Text color={colors.inputPrompt} bold>{'>'} </Text>
         <Box flexGrow={1}>
           {isPlaceholder ? (
-            <Text color="gray">
-              <Text backgroundColor="cyan" color="white"> </Text>
+            <Text color={colors.muted}>
+              <Text backgroundColor={colors.inputCursor} color={colors.inverse}> </Text>
               {placeholder}
             </Text>
           ) : (
-            <Text color="gray">
+            <Text color={colors.muted}>
               {value.slice(0, inputCursorPosition)}
-              <Text backgroundColor="cyan" color="white">
+              <Text backgroundColor={colors.inputCursor} color={colors.inverse}>
                 {inputCursorPosition < value.length ? value[inputCursorPosition] : ' '}
               </Text>
               {value.slice(inputCursorPosition + 1)}

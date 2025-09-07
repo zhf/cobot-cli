@@ -4,6 +4,7 @@ import { ChatMessage } from '../hooks/useAgent.js';
 import ToolHistoryItem from '../display/ToolHistoryItem.js';
 import Stats from '../display/Stats.js';
 import { parseMarkdown, MarkdownElement, parseInlineElements } from '../utils/markdown.js';
+import { useTheme } from '../hooks/useTheme.js';
 
 interface Usage {
   queue_time: number;
@@ -23,6 +24,7 @@ interface MessageHistoryProps {
 }
 
 export default function MessageHistory({ messages, showReasoning = true, usageData }: MessageHistoryProps) {
+  const { colors } = useTheme();
   const scrollRef = useRef<any>(null);
 
   // Auto-scroll to bottom when new messages are added
@@ -45,8 +47,8 @@ export default function MessageHistory({ messages, showReasoning = true, usageDa
       case 'user':
         return (
           <Box key={message.id} marginBottom={1}>
-            <Text color="cyan" bold>{'>'} </Text>
-            <Text color="gray">{message.content}</Text>
+            <Text color={colors.userMessage} bold>{'>'} </Text>
+            <Text color={colors.muted}>{message.content}</Text>
           </Box>
         );
 
@@ -68,12 +70,12 @@ export default function MessageHistory({ messages, showReasoning = true, usageDa
                 case 'code-block':
                   return (
                     <Box key={index} marginY={1} paddingLeft={2}>
-                      <Text color="cyan">{element.content}</Text>
+                      <Text color={colors.info}>{element.content}</Text>
                     </Box>
                   );
                 case 'heading':
                   return (
-                    <Text key={index} bold color={element.level && element.level <= 2 ? 'yellow' : 'white'}>
+                    <Text key={index} bold color={element.level && element.level <= 2 ? colors.warning : colors.foreground}>
                       {element.content}
                     </Text>
                   );
@@ -84,7 +86,7 @@ export default function MessageHistory({ messages, showReasoning = true, usageDa
                       {inlineElements.map((inlineElement, inlineIndex) => {
                         switch (inlineElement.type) {
                           case 'code':
-                            return <Text key={inlineIndex} color="cyan">{inlineElement.content}</Text>;
+                            return <Text key={inlineIndex} color={colors.info}>{inlineElement.content}</Text>;
                           case 'bold':
                             return <Text key={inlineIndex} bold>{inlineElement.content}</Text>;
                           case 'italic':
@@ -114,7 +116,7 @@ export default function MessageHistory({ messages, showReasoning = true, usageDa
 
         return (
           <Box key={message.id} marginBottom={1}>
-            <Text color="yellow" italic>
+            <Text color={colors.systemMessage} italic>
               {message.content}
             </Text>
           </Box>
@@ -130,14 +132,14 @@ export default function MessageHistory({ messages, showReasoning = true, usageDa
         }
         return (
           <Box key={message.id} marginBottom={1}>
-            <Text color="blue">Tool: {message.content}</Text>
+            <Text color={colors.secondary}>Tool: {message.content}</Text>
           </Box>
         );
 
       default:
         return (
           <Box key={message.id} marginBottom={1}>
-            <Text color="gray" dimColor>
+            <Text color={colors.muted} dimColor>
               Unknown: {message.content}
             </Text>
           </Box>
@@ -149,10 +151,10 @@ export default function MessageHistory({ messages, showReasoning = true, usageDa
     <Box ref={scrollRef} flexDirection="column" flexGrow={1}>
       {messages.length === 0 ? (
         <Box justifyContent="center" paddingY={2} flexDirection="column" alignItems="center">
-          <Text color="gray" dimColor italic>
+          <Text color={colors.muted} dimColor italic>
             Ask for help with coding tasks or everyday office challenges.
           </Text>
-          <Text color="gray" dimColor italic>
+          <Text color={colors.muted} dimColor italic>
             Type /help for available commands and features.
           </Text>
         </Box>

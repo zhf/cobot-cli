@@ -6,6 +6,8 @@ export interface CommandContext {
   setShowBaseURLSelector?: (show: boolean) => void;
   toggleReasoning?: () => void;
   showReasoning?: boolean;
+  toggleTheme?: () => void;
+  isDarkTheme?: boolean;
   sessionStats?: {
     promptTokens: number;
     completionTokens: number;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Agent } from '../../core/agent.js';
+import { useTheme } from '../hooks/useTheme.js';
 
 interface ModelSelectorProps {
   onSubmit: (model: string) => void;
@@ -23,6 +24,7 @@ const FALLBACK_MODELS = [
 ];
 
 export default function ModelSelector({ onSubmit, onCancel, currentModel, agent }: ModelSelectorProps) {
+  const { colors } = useTheme();
   const [models, setModels] = useState<OpenAIModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -162,24 +164,24 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
     return (
       <Box flexDirection="column">
         <Box marginBottom={1}>
-          <Text color="cyan" bold>Enter Custom Model</Text>
+          <Text color={colors.primary} bold>Enter Custom Model</Text>
         </Box>
 
         <Box marginBottom={1}>
-          <Text color="gray" dimColor>
+          <Text color={colors.muted} dimColor>
             Enter the model name (e.g., gpt-4, claude-3-sonnet-20240229, gemini-pro)
           </Text>
         </Box>
 
         <Box marginBottom={1}>
-          <Text color="white">
-            Model: <Text color="yellow">{customModel}</Text>
-            <Text color="white" inverse>_</Text>
+          <Text color={colors.foreground}>
+            Model: <Text color={colors.warning}>{customModel}</Text>
+            <Text color={colors.foreground} inverse>_</Text>
           </Text>
         </Box>
 
         <Box marginBottom={1}>
-          <Text color="gray" dimColor>
+          <Text color={colors.muted} dimColor>
             Press Enter to {customModel.trim() ? 'save' : currentModel ? 'keep current' : 'save'}, Escape to cancel
           </Text>
         </Box>
@@ -207,11 +209,11 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
-        <Text color="cyan" bold>Select Model</Text>
+        <Text color={colors.primary} bold>Select Model</Text>
       </Box>
 
       <Box marginBottom={1}>
-        <Text color="gray" dimColor>
+        <Text color={colors.muted} dimColor>
           Choose a model for your conversation. The chat will be cleared when you switch models.
         </Text>
       </Box>
@@ -219,14 +221,14 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
       {currentModel && showCurrentModel && (
         <Box marginBottom={1} flexDirection="column">
           <Box>
-            <Text color="gray" dimColor>
+            <Text color={colors.muted} dimColor>
               Current Model:{' '}
-              <Text color="yellow">{currentModel}</Text>{' '}
-              <Text color="green">(current)</Text>
+              <Text color={colors.warning}>{currentModel}</Text>{' '}
+              <Text color={colors.success}>(current)</Text>
             </Text>
           </Box>
           <Box>
-            <Text color="gray" dimColor>
+            <Text color={colors.muted} dimColor>
               Start typing to enter a new model, or press Enter to keep current
             </Text>
           </Box>
@@ -236,10 +238,10 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
       {loading && (
         <Box marginBottom={1} flexDirection="column">
           <Box marginBottom={1}>
-            <Text color="yellow" bold>Fetching models...</Text>
+            <Text color={colors.warning} bold>Fetching models...</Text>
           </Box>
           <Box>
-            <Text color="gray" dimColor>
+            <Text color={colors.muted} dimColor>
               Loading available models from {agent.getBaseURL() || "https://api.openai.com/v1"}
             </Text>
           </Box>
@@ -249,7 +251,7 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
       {error && (
         <Box marginBottom={1} flexDirection="column">
           <Box marginBottom={1}>
-            <Text color="red">
+            <Text color={colors.error}>
               {error === 'No API key available' 
                 ? 'No API key configured' 
                 : `Could not fetch models: ${error}`
@@ -257,7 +259,7 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
             </Text>
           </Box>
           <Box>
-            <Text color="gray" dimColor>
+            <Text color={colors.muted} dimColor>
               {error === 'No API key available'
                 ? 'Please set your API key first using /apikey command'
                 : 'Using fallback models'
@@ -270,15 +272,15 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
       {!loading && !error && emptyResults && (
         <Box marginBottom={1} flexDirection="column">
           <Box marginBottom={1}>
-            <Text color="yellow" bold>No models available</Text>
+            <Text color={colors.warning} bold>No models available</Text>
           </Box>
           <Box>
-            <Text color="gray" dimColor>
+            <Text color={colors.muted} dimColor>
               The API request succeeded but returned no models.
             </Text>
           </Box>
           <Box>
-            <Text color="gray" dimColor>
+            <Text color={colors.muted} dimColor>
               This might indicate an issue with your API key or the service.
             </Text>
           </Box>
@@ -287,17 +289,17 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
 
       {error && error === 'No API key available' && (
         <Box marginBottom={1}>
-          <Text color="yellow" bold>Recommended actions:</Text>
-          <Text color="gray" dimColor>1. Press Escape to cancel and return to chat</Text>
-          <Text color="gray" dimColor>2. Type /apikey to set your API key</Text>
-          <Text color="gray" dimColor>3. Then use /model again to select from available models</Text>
+          <Text color={colors.warning} bold>Recommended actions:</Text>
+          <Text color={colors.muted} dimColor>1. Press Escape to cancel and return to chat</Text>
+          <Text color={colors.muted} dimColor>2. Type /apikey to set your API key</Text>
+          <Text color={colors.muted} dimColor>3. Then use /model again to select from available models</Text>
         </Box>
       )}
 
       {showFallbackOnly && (
         <Box marginBottom={1}>
-          <Text color="yellow" bold>Note:</Text>
-          <Text color="gray" dimColor>
+          <Text color={colors.warning} bold>Note:</Text>
+          <Text color={colors.muted} dimColor>
             Showing common models below. You can still select a model, but you will need to set your API key before using the assistant.
           </Text>
         </Box>
@@ -317,7 +319,7 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
             </Text>
             {index === selectedIndex && (
               <Box marginLeft={4} marginTop={0}>
-                <Text color="gray" dimColor>
+                <Text color={colors.muted} dimColor>
                   {option.description}
                 </Text>
               </Box>
@@ -327,7 +329,7 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
       </Box>
 
       <Box marginBottom={1}>
-        <Text color="gray" dimColor>
+        <Text color={colors.muted} dimColor>
           Press Enter to {showCustomInput ? 'save' : currentModel && showCurrentModel ? 'keep current' : 'select'}, Escape to cancel
         </Text>
       </Box>

@@ -8,6 +8,7 @@ import reasoningCommand from './definitions/reasoning.js';
 import statsCommand from './definitions/stats.js';
 import baseurlCommand from './definitions/baseurl.js';
 import apikeyCommand from './definitions/apikey.js';
+import themeCommand from './definitions/theme.js';
 
 const availableCommands: CommandDefinition[] = [
   helpCommand,
@@ -19,6 +20,7 @@ const availableCommands: CommandDefinition[] = [
   statsCommand,
   baseurlCommand,
   apikeyCommand,
+  themeCommand,
 ];
 
 export function getAvailableCommands(): CommandDefinition[] {

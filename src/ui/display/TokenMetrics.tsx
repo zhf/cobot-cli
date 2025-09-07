@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import { useTheme } from '../hooks/useTheme.js';
 
 interface TokenMetricsProps {
   isActive: boolean;
@@ -18,6 +19,7 @@ export default function TokenMetrics({
   pausedTime,
   completionTokens,
 }: TokenMetricsProps) {
+  const { colors } = useTheme();
   const [displayTime, setDisplayTime] = useState('0.0s');
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
 
@@ -91,10 +93,10 @@ export default function TokenMetrics({
   return (
     <Box paddingX={1}>
       <Box gap={2}>
-        <Text color="cyan">{getElapsedTime()}</Text>
-        <Text color="green">{completionTokens} tokens</Text>
+        <Text color={colors.primary}>{getElapsedTime()}</Text>
+        <Text color={colors.success}>{completionTokens} tokens</Text>
         {(isActive || isPaused) && (
-            <Text color={isPaused ? 'yellow' : 'blue'}>
+            <Text color={isPaused ? colors.warning : colors.secondary}>
               {getStatusText()}
             </Text>
         )}

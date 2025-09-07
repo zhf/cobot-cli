@@ -6,6 +6,7 @@ interface Config {
   openaiApiKey?: string;
   defaultModel?: string;
   openaiBaseURL?: string;
+  theme?: 'dark' | 'light';
 }
 
 const CONFIG_DIRECTORY_NAME = '.cobot'; // In home directory
@@ -128,6 +129,21 @@ class ConfigManager {
       }
     } catch (error) {
       console.warn('Failed to clear base URL:', error);
+    }
+  }
+
+  public getTheme(): 'dark' | 'light' {
+    const config = this.readConfigFromFile();
+    return config.theme || 'dark'; // Default to dark theme
+  }
+
+  public setTheme(theme: 'dark' | 'light'): void {
+    try {
+      const config = this.readConfigFromFile();
+      config.theme = theme;
+      this.writeConfigToFile(config);
+    } catch (error) {
+      throw new Error(`Failed to save theme preference: ${error}`);
     }
   }
 }

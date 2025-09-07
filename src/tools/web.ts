@@ -6,7 +6,7 @@ import { createFile } from './files.js';
 import { ToolResult, createToolResponse } from './files.js';
 
 // Load environment variables from .env file
-config();
+config({quiet: true});
 
 /**
  * Generate a complete HTML file with embedded CSS and JavaScript based on a prompt
