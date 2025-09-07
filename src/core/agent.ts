@@ -23,6 +23,8 @@ export class Agent {
 
   private temperature: number;
 
+  private baseURL: string | null = null;
+
   private sessionAutoApprove: boolean = false;
 
   private systemMessage: string;
@@ -86,7 +88,7 @@ export class Agent {
     try {
       const customContextFilePath = process.env.OPENAI_CONTEXT_FILE;
       const baseDir = process.env.OPENAI_CONTEXT_DIR || process.cwd();
-      const contextPath = customContextFilePath || path.join(baseDir, '.openai', 'context.md');
+      const contextPath = customContextFilePath || path.join(baseDir, '.cobot', 'context.md');
       const contextLimit = parseInt(process.env.OPENAI_CONTEXT_LIMIT || '20000', 10);
       if (fs.existsSync(contextPath)) {
         const contextContent = fs.readFileSync(contextPath, 'utf-8');
@@ -127,6 +129,21 @@ export class Agent {
       systemMessage,
       debug,
     );
+
+    // Load base URL from config if available
+    const baseURL = configManager.getBaseURL();
+    if (baseURL) {
+      agent.baseURL = baseURL;
+      debugLog('Loaded base URL from config:', baseURL);
+    }
+
+    // Load API key from config if available
+    const apiKey = configManager.getApiKey();
+    if (apiKey) {
+      agent.apiKey = apiKey;
+      debugLog('Loaded API key from config');
+    }
+
     return agent;
   }
 
@@ -196,6 +213,9 @@ Never generate markdown tables. Be brief and efficient.
 
     // Initialize OpenAI client
     const clientOptions: ClientOptions = { apiKey };
+    if (this.baseURL) {
+      clientOptions.baseURL = this.baseURL;
+    }
     this.client = new OpenAI(clientOptions);
     debugLog('OpenAI client initialized with provided API key');
   }
@@ -209,6 +229,47 @@ Never generate markdown tables. Be brief and efficient.
     this.configManager.clearApiKey();
     this.apiKey = null;
     this.client = null;
+  }
+
+  public setBaseURL(baseURL: string): void {
+    debugLog('Setting base URL in agent...');
+    debugLog('Base URL provided:', baseURL);
+    this.baseURL = baseURL;
+
+    // Reinitialize OpenAI client if API key is already set
+    if (this.apiKey && this.client) {
+      const clientOptions: ClientOptions = { apiKey: this.apiKey };
+      if (this.baseURL) {
+        clientOptions.baseURL = this.baseURL;
+      }
+      this.client = new OpenAI(clientOptions);
+      debugLog('OpenAI client reinitialized with new base URL');
+    }
+  }
+
+  public saveBaseURL(baseURL: string): void {
+    this.configManager.setBaseURL(baseURL);
+    this.setBaseURL(baseURL);
+  }
+
+  public clearBaseURL(): void {
+    this.configManager.clearBaseURL();
+    this.baseURL = null;
+
+    // Reinitialize OpenAI client if API key is already set
+    if (this.apiKey && this.client) {
+      const clientOptions: ClientOptions = { apiKey: this.apiKey };
+      this.client = new OpenAI(clientOptions);
+      debugLog('OpenAI client reinitialized without custom base URL');
+    }
+  }
+
+  public getBaseURL(): string | null {
+    return this.baseURL;
+  }
+
+  public getApiKey(): string | null {
+    return this.apiKey;
   }
 
   public clearHistory(): void {

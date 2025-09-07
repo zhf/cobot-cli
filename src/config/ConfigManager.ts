@@ -5,6 +5,7 @@ import * as os from 'os';
 interface Config {
   openaiApiKey?: string;
   defaultModel?: string;
+  openaiBaseURL?: string;
 }
 
 const CONFIG_DIRECTORY_NAME = '.cobot'; // In home directory
@@ -95,6 +96,38 @@ class ConfigManager {
       this.writeConfigToFile(config);
     } catch (error) {
       throw new Error(`Failed to save default model: ${error}`);
+    }
+  }
+
+  public getBaseURL(): string | null {
+    const config = this.readConfigFromFile();
+    return config.openaiBaseURL || null;
+  }
+
+  public setBaseURL(baseURL: string): void {
+    try {
+      const config = this.readConfigFromFile();
+      config.openaiBaseURL = baseURL;
+      this.writeConfigToFile(config);
+    } catch (error) {
+      throw new Error(`Failed to save base URL: ${error}`);
+    }
+  }
+
+  public clearBaseURL(): void {
+    try {
+      const config = this.readConfigFromFile();
+      delete config.openaiBaseURL;
+
+      if (Object.keys(config).length === 0) {
+        if (fs.existsSync(this.configPath)) {
+          fs.unlinkSync(this.configPath);
+        }
+      } else {
+        this.writeConfigToFile(config);
+      }
+    } catch (error) {
+      console.warn('Failed to clear base URL:', error);
     }
   }
 }
