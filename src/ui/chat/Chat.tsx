@@ -14,6 +14,7 @@ import Login from '../overlays/Login.js';
 import ModelSelector from '../overlays/ModelSelector.js';
 import MaxIterationsContinue from '../overlays/MaxIterationsContinue.js';
 import ErrorRetry from '../overlays/ErrorRetry.js';
+import BaseURLSelector from '../overlays/BaseURLSelector.js';
 import { handleSlashCommand } from '../../commands/index.js';
 
 interface ChatProps {
@@ -82,8 +83,9 @@ export default function Chat({ agent }: ChatProps) {
   const { exit: exitApplication } = useApp();
   const [inputValue, setInputValue] = useState('');
   const [showInput, setShowInput] = useState(true);
-  const [showLogin, setShowLogin] = useState(false);
+  const [showApiLogin, setShowApiLogin] = useState(false);
   const [showModelSelector, setShowModelSelector] = useState(false);
+  const [showBaseURLSelector, setShowBaseURLSelector] = useState(false);
 
   // Handle global keyboard shortcuts
   useInput((input, key) => {
@@ -122,10 +124,10 @@ export default function Chat({ agent }: ChatProps) {
     }
   });
 
-  // Hide input when processing, waiting for approval, error retry, or showing login/model selector
+  // Hide input when processing, waiting for approval, error retry, or showing login/model selector/baseurl selector
   useEffect(() => {
-    setShowInput(!isProcessing && !pendingApproval && !pendingError && !showLogin && !showModelSelector);
-  }, [isProcessing, pendingApproval, pendingError, showLogin, showModelSelector]);
+    setShowInput(!isProcessing && !pendingApproval && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector);
+  }, [isProcessing, pendingApproval, pendingError, showApiLogin, showModelSelector, showBaseURLSelector]);
 
   const handleUserMessageSubmission = async (message: string) => {
     if (message.trim() && !isProcessing) {
@@ -139,8 +141,9 @@ export default function Chat({ agent }: ChatProps) {
             clearHistory();
             clearSessionStats();
           },
-          setShowLogin,
+          setShowLogin: setShowApiLogin,
           setShowModelSelector,
+          setShowBaseURLSelector,
           toggleReasoning,
           showReasoning,
           sessionStats,
@@ -166,7 +169,7 @@ export default function Chat({ agent }: ChatProps) {
   };
 
   const handleLogin = (apiKey: string) => {
-    setShowLogin(false);
+    setShowApiLogin(false);
     // Save the API key persistently
     agent.saveApiKey(apiKey);
     addMessage({
@@ -176,10 +179,10 @@ export default function Chat({ agent }: ChatProps) {
   };
 
   const handleLoginCancel = () => {
-    setShowLogin(false);
+    setShowApiLogin(false);
     addMessage({
       role: 'system',
-      content: 'Login canceled.',
+      content: 'API key entry canceled.',
     });
   };
 
@@ -201,6 +204,24 @@ export default function Chat({ agent }: ChatProps) {
     addMessage({
       role: 'system',
       content: 'Model selection canceled.',
+    });
+  };
+
+  const handleBaseURLSelect = (baseURL: string) => {
+    setShowBaseURLSelector(false);
+    // Set the new base URL on the agent
+    agent.saveBaseURL(baseURL);
+    addMessage({
+      role: 'system',
+      content: `Base URL set to: ${baseURL}`,
+    });
+  };
+
+  const handleBaseURLCancel = () => {
+    setShowBaseURLSelector(false);
+    addMessage({
+      role: 'system',
+      content: 'Base URL selection canceled.',
     });
   };
 
@@ -256,16 +277,24 @@ export default function Chat({ agent }: ChatProps) {
             onRetry={handleErrorRetry}
             onCancel={handleErrorCancel}
           />
-        ) : showLogin ? (
+        ) : showApiLogin ? (
           <Login
             onSubmit={handleLogin}
             onCancel={handleLoginCancel}
+            currentApiKey={agent.getApiKey() || undefined}
           />
         ) : showModelSelector ? (
           <ModelSelector
             onSubmit={handleModelSelect}
             onCancel={handleModelCancel}
             currentModel={agent.getCurrentModel?.() || undefined}
+            agent={agent}
+          />
+        ) : showBaseURLSelector ? (
+          <BaseURLSelector
+            onSubmit={handleBaseURLSelect}
+            onCancel={handleBaseURLCancel}
+            currentBaseURL={agent.getBaseURL?.() || undefined}
           />
         ) : showInput ? (
           <MessageInput
