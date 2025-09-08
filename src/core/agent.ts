@@ -8,6 +8,7 @@ import { ALL_TOOL_SCHEMAS } from '../tools/schemas/index.js';
 import ConfigManager from '../config/ConfigManager.js';
 import { Message, ToolCall, ApiError } from './messages.js';
 import { debugLog } from './logger.js';
+import { createChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
 
 
@@ -322,21 +323,29 @@ Never generate markdown tables. Be brief and efficient.
     // Check API key on first message send
     if (!this.client) {
       debugLog('Initializing OpenAI client...');
-      // Try environment variable first
-      const envApiKey = process.env.OPENAI_API_KEY;
-      if (envApiKey) {
-        debugLog('Using API key from environment variable');
-        this.setApiKey(envApiKey);
+      
+      // Use the API key that was already loaded during agent creation
+      // This ensures we don't override a previously set session key with environment variables
+      if (this.apiKey) {
+        debugLog('Using API key from agent initialization');
+        this.setApiKey(this.apiKey);
       } else {
-        // Try config file
-        debugLog('Environment variable OPENAI_API_KEY not found, checking config file');
-        const configApiKey = this.configManager.getApiKey();
-        if (configApiKey) {
-          debugLog('Using API key from config file');
-          this.setApiKey(configApiKey);
+        // Try environment variable first
+        const envApiKey = process.env.OPENAI_API_KEY;
+        if (envApiKey) {
+          debugLog('Using API key from environment variable');
+          this.setApiKey(envApiKey);
         } else {
-          debugLog('No API key found anywhere');
-          throw new Error('No API key available. Please use /login to set your OpenAI API key.');
+          // Try config file
+          debugLog('Environment variable OPENAI_API_KEY not found, checking config file');
+          const configApiKey = this.configManager.getApiKey();
+          if (configApiKey) {
+            debugLog('Using API key from config file');
+            this.setApiKey(configApiKey);
+          } else {
+            debugLog('No API key found anywhere');
+            throw new Error('No API key available. Please use /login to set your OpenAI API key.');
+          }
         }
       }
       debugLog('OpenAI client initialized successfully');
@@ -388,17 +397,18 @@ Never generate markdown tables. Be brief and efficient.
           // Create AbortController for this request
           this.currentAbortController = new AbortController();
 
-          const response = await this.client.chat.completions.create({
+          const options: ChatCompletionOptions = {
             model: this.model,
             messages: this.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-            tools: ALL_TOOL_SCHEMAS,
-            tool_choice: 'auto',
             temperature: this.temperature,
             max_tokens: 8000,
+            tools: ALL_TOOL_SCHEMAS,
+            tool_choice: 'auto',
             stream: false,
-          }, {
             signal: this.currentAbortController.signal,
-          });
+          };
+
+          const response = await createChatCompletion(this.client, options);
 
           debugLog('Full API response received:', response);
           debugLog('Response usage:', response.usage);

@@ -64,8 +64,7 @@ export default function Login({ onSubmit, onCancel, currentApiKey }: LoginProps)
             <Text color={colors.muted} dimColor>
               Current API Key:{' '}
               <Text color={colors.warning}>
-          {'*'.repeat(Math.min(currentApiKey.length, 20))}
-          {currentApiKey.length > 20 && '...'}
+          {currentApiKey.length > 4 ? '*'.repeat(currentApiKey.length - 4) + currentApiKey.slice(-4) : currentApiKey}
               </Text>{' '}
               <Text color={colors.success}>(current)</Text>
             </Text>

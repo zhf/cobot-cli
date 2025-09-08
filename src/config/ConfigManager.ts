@@ -27,6 +27,7 @@ class ConfigManager {
     }
   }
 
+  
   private readConfigFromFile(): Config {
     try {
       if (!fs.existsSync(this.configPath)) {
@@ -38,6 +39,39 @@ class ConfigManager {
       console.warn('Failed to read config file:', error);
       return {};
     }
+  }
+
+  private getConfig(): Config {
+    // Priority: Config File > COBOT_* env vars > OPENAI_* env vars > Defaults
+    const fileConfig = this.readConfigFromFile();
+    const mergedConfig: Config = {};
+    
+    // Start with file config (highest priority)
+    if (fileConfig.openaiApiKey) mergedConfig.openaiApiKey = fileConfig.openaiApiKey;
+    if (fileConfig.defaultModel) mergedConfig.defaultModel = fileConfig.defaultModel;
+    if (fileConfig.openaiBaseURL) mergedConfig.openaiBaseURL = fileConfig.openaiBaseURL;
+    if (fileConfig.theme) mergedConfig.theme = fileConfig.theme;
+    
+    // COBOT_* environment variables (medium priority)
+    if (!mergedConfig.openaiApiKey && process.env.COBOT_OPENAI_API_KEY) {
+      mergedConfig.openaiApiKey = process.env.COBOT_OPENAI_API_KEY;
+    }
+    if (!mergedConfig.defaultModel && process.env.COBOT_DEFAULT_MODEL) {
+      mergedConfig.defaultModel = process.env.COBOT_DEFAULT_MODEL;
+    }
+    if (!mergedConfig.openaiBaseURL && process.env.COBOT_OPENAI_BASE_URL) {
+      mergedConfig.openaiBaseURL = process.env.COBOT_OPENAI_BASE_URL;
+    }
+    
+    // OPENAI_* environment variables (lowest priority, as fallback)
+    if (!mergedConfig.openaiApiKey && process.env.OPENAI_API_KEY) {
+      mergedConfig.openaiApiKey = process.env.OPENAI_API_KEY;
+    }
+    if (!mergedConfig.openaiBaseURL && process.env.OPENAI_BASE_URL) {
+      mergedConfig.openaiBaseURL = process.env.OPENAI_BASE_URL;
+    }
+    
+    return mergedConfig;
   }
 
   private writeConfigToFile(config: Config): void {
@@ -54,7 +88,7 @@ class ConfigManager {
   }
 
   public getApiKey(): string | null {
-    const config = this.readConfigFromFile();
+    const config = this.getConfig();
     return config.openaiApiKey || null;
   }
 
@@ -86,7 +120,7 @@ class ConfigManager {
   }
 
   public getDefaultModel(): string | null {
-    const config = this.readConfigFromFile();
+    const config = this.getConfig();
     return config.defaultModel || null;
   }
 
@@ -101,7 +135,7 @@ class ConfigManager {
   }
 
   public getBaseURL(): string | null {
-    const config = this.readConfigFromFile();
+    const config = this.getConfig();
     return config.openaiBaseURL || null;
   }
 
@@ -133,7 +167,7 @@ class ConfigManager {
   }
 
   public getTheme(): 'dark' | 'light' {
-    const config = this.readConfigFromFile();
+    const config = this.getConfig();
     return config.theme || 'dark'; // Default to dark theme
   }
 

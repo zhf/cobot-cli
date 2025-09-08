@@ -102,19 +102,36 @@ This creates a `.cobot/` folder in your home directory to store your configurati
 
 #### Environment Variables
 
-You can also set configuration via environment variables:
+Cobot CLI supports environment variables with a priority system:
+
+**Priority Order (Highest to Lowest):**
+1. **Config File** (`~/.cobot/config.json`) - Highest priority
+2. **COBOT_* Environment Variables**:
+   - `COBOT_OPENAI_API_KEY`
+   - `COBOT_OPENAI_BASE_URL` 
+   - `COBOT_DEFAULT_MODEL`
+3. **OPENAI_* Environment Variables** (fallback):
+   - `OPENAI_API_KEY`
+   - `OPENAI_BASE_URL`
+
+**Usage Examples:**
 
 ```bash
+# COBOT_* variables (higher priority)
 export COBOT_OPENAI_API_KEY=your_api_key_here
 export COBOT_OPENAI_BASE_URL=https://api.openai.com/v1
-```
+export COBOT_DEFAULT_MODEL=gpt-4o
 
-or cobot will use the following environment variables as defaults:
-
-```bash
+# OPENAI_* variables (fallback, lower priority)
 export OPENAI_API_KEY=your_api_key_here
 export OPENAI_BASE_URL=https://api.openai.com/v1
 ```
+
+**How it works:**
+- If a value exists in the config file, it will always be used first
+- If no config file value exists, COBOT_* variables are checked
+- If no COBOT_* variables are set, OPENAI_* variables are used as fallback
+- This allows for flexible configuration in different environments
 
 ### Available Commands
 

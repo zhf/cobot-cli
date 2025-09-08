@@ -4,6 +4,7 @@ import * as path from 'path';
 import { config } from 'dotenv';
 import { createFile } from './files.js';
 import { ToolResult, createToolResponse } from './files.js';
+import { createChatCompletion } from '../core/openai-helper.js';
 
 // Load environment variables from .env file
 config({quiet: true});
@@ -68,7 +69,7 @@ Color scheme: ${colorScheme}
 Return ONLY the complete HTML code (no explanations, no markdown code blocks).`;
 
     // Generate the web page using OpenAI
-    const completion = await openai.chat.completions.create({
+    const completion = await createChatCompletion(openai, {
       model, // Use model from environment variable
       messages: [
         { role: 'system', content: systemPrompt },
