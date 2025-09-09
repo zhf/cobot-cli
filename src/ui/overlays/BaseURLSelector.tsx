@@ -47,7 +47,7 @@ export default function BaseURLSelector({ onSubmit, onCancel, currentBaseURL }: 
         return;
       }
 
-      if (key.backspace) {
+      if (key.backspace || key.delete) {
         setCustomURL(prev => prev.slice(0, -1));
         return;
       }

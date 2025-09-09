@@ -108,7 +108,7 @@ export default function ModelSelector({ onSubmit, onCancel, currentModel, agent 
         return;
       }
 
-      if (key.backspace) {
+      if (key.backspace || key.delete) {
         setCustomModel(prev => prev.slice(0, -1));
         return;
       }
