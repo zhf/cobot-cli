@@ -1,6 +1,6 @@
 {
 	"name": "cobot-cli",
-	"version": "1.0.4",
+	"version": "1.0.5",
 	"description": "A CLI coding and everyday office assistant powered by OpenAI",
 	"license": "MIT",
 	"bin": {
