@@ -4,7 +4,12 @@ import * as path from 'path';
 // Debug logging to file
 const AGENT_DEBUG_LOG_FILE = path.join(process.cwd(), 'debug-agent.log');
 let hasDebugLogBeenCleared = false;
-const isDebugLoggingEnabled = false;
+let isDebugLoggingEnabled = false;
+
+export function setDebugLoggingEnabled(enabled: boolean) {
+  isDebugLoggingEnabled = enabled;
+  hasDebugLogBeenCleared = false;
+}
 
 export function debugLog(message: string, data?: unknown) {
   if (!isDebugLoggingEnabled) return;

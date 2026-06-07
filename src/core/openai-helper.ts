@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import type { ClientOptions } from 'openai';
+import ConfigManager from '../config/ConfigManager.js';
 
 export interface ChatCompletionOptions {
   model: string;
@@ -12,10 +13,13 @@ export interface ChatCompletionOptions {
   signal?: AbortSignal;
 }
 
-export async function createChatCompletion(
-  client: OpenAI,
-  options: ChatCompletionOptions
-): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+export function getTokenLimitOption(model: string, maxTokens: number): Record<string, number> {
+  return model.startsWith('gpt-5')
+    ? { max_completion_tokens: maxTokens }
+    : { max_tokens: maxTokens };
+}
+
+export function buildChatCompletionPayload(options: ChatCompletionOptions): Record<string, unknown> {
   const {
     model,
     messages,
@@ -24,15 +28,15 @@ export async function createChatCompletion(
     tools,
     tool_choice,
     stream = false,
-    signal,
   } = options;
-
-  const completionOptions: any = {
+  const configManager = new ConfigManager();
+  const completionOptions: Record<string, unknown> = {
+    ...configManager.getExtraRequest(),
     model,
     messages,
     temperature,
-    max_tokens,
     stream,
+    ...getTokenLimitOption(model, max_tokens),
   };
 
   if (tools) {
@@ -43,10 +47,19 @@ export async function createChatCompletion(
     completionOptions.tool_choice = tool_choice;
   }
 
-  const requestConfig: any = {};
-  if (signal) {
-    requestConfig.signal = signal;
+  return completionOptions;
+}
+
+export async function createChatCompletion(
+  client: OpenAI,
+  options: ChatCompletionOptions
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  const completionOptions = buildChatCompletionPayload(options);
+
+  const requestConfig: { signal?: AbortSignal } = {};
+  if (options.signal) {
+    requestConfig.signal = options.signal;
   }
 
-  return client.chat.completions.create(completionOptions, requestConfig);
+  return client.chat.completions.create(completionOptions as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, requestConfig);
 }

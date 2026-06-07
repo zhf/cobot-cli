@@ -7,8 +7,8 @@ import { hasFileBeenReadBeforeEdit, getReadBeforeEditErrorMessage } from '../too
 import { ALL_TOOL_SCHEMAS } from '../tools/schemas/index.js';
 import ConfigManager from '../config/ConfigManager.js';
 import { Message, ToolCall, ApiError } from './messages.js';
-import { debugLog } from './logger.js';
-import { createChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
+import { debugLog, setDebugLoggingEnabled } from './logger.js';
+import { buildChatCompletionPayload, createChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
 
 
@@ -74,6 +74,7 @@ export class Agent {
 
     // Set debug mode
     const isDebugEnabled = debug || false;
+    setDebugLoggingEnabled(isDebugEnabled);
 
     // Build system message
     if (systemMessage) {
@@ -376,24 +377,6 @@ Never generate markdown tables. Be brief and efficient.
           debugLog('Messages count:', this.messages.length);
           debugLog('Last few messages:', this.messages.slice(-3));
 
-          // Prepare API request payload for curl logging
-          const apiRequestPayload = {
-            model: this.model,
-            messages: this.messages,
-            tools: ALL_TOOL_SCHEMAS,
-            tool_choice: 'auto' as const,
-            temperature: this.temperature,
-            max_tokens: 8000,
-            stream: false as const,
-          };
-
-          // Log equivalent curl command
-          this.requestCount++;
-          const curlCommand = generateDebugCurlCommand(this.apiKey!, apiRequestPayload, this.requestCount);
-          if (curlCommand) {
-            debugLog('Equivalent curl command:', curlCommand);
-          }
-
           // Create AbortController for this request
           this.currentAbortController = new AbortController();
 
@@ -407,6 +390,18 @@ Never generate markdown tables. Be brief and efficient.
             stream: false,
             signal: this.currentAbortController.signal,
           };
+
+          // Prepare API request payload for debug logging
+          const apiRequestPayload = buildChatCompletionPayload(options);
+
+          debugLog('OpenAI chat completion request payload:', apiRequestPayload);
+
+          // Log equivalent curl command
+          this.requestCount++;
+          const curlCommand = generateDebugCurlCommand(this.apiKey!, apiRequestPayload, this.requestCount);
+          if (curlCommand) {
+            debugLog('Equivalent curl command:', curlCommand);
+          }
 
           const response = await createChatCompletion(this.client, options);
 

@@ -7,10 +7,43 @@ interface Config {
   defaultModel?: string;
   openaiBaseURL?: string;
   theme?: 'dark' | 'light';
+  extraRequest?: string;
 }
 
 const CONFIG_DIRECTORY_NAME = '.cobot'; // In home directory
 const CONFIG_FILE_NAME = 'config.json';
+
+function expandEnvironmentVariables(value: string): string {
+  return value.replace(/\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g, (match, bracedName: string | undefined, bareName: string | undefined) => {
+    const envName = bracedName || bareName;
+
+    if (!envName) {
+      return match;
+    }
+
+    return process.env[envName] ?? match;
+  });
+}
+
+function isTheme(value: string): value is 'dark' | 'light' {
+  return value === 'dark' || value === 'light';
+}
+
+function expandConfig(config: Config): Config {
+  const expandedConfig: Config = {};
+
+  if (config.openaiApiKey) expandedConfig.openaiApiKey = expandEnvironmentVariables(config.openaiApiKey);
+  if (config.defaultModel) expandedConfig.defaultModel = expandEnvironmentVariables(config.defaultModel);
+  if (config.openaiBaseURL) expandedConfig.openaiBaseURL = expandEnvironmentVariables(config.openaiBaseURL);
+  if (config.extraRequest) expandedConfig.extraRequest = expandEnvironmentVariables(config.extraRequest);
+
+  if (config.theme) {
+    const expandedTheme = expandEnvironmentVariables(config.theme);
+    if (isTheme(expandedTheme)) expandedConfig.theme = expandedTheme;
+  }
+
+  return expandedConfig;
+}
 
 class ConfigManager {
   private configPath: string;
@@ -43,7 +76,7 @@ class ConfigManager {
 
   private getConfig(): Config {
     // Priority: Config File > COBOT_* env vars > OPENAI_* env vars > Defaults
-    const fileConfig = this.readConfigFromFile();
+    const fileConfig = expandConfig(this.readConfigFromFile());
     const mergedConfig: Config = {};
     
     // Start with file config (highest priority)
@@ -51,6 +84,7 @@ class ConfigManager {
     if (fileConfig.defaultModel) mergedConfig.defaultModel = fileConfig.defaultModel;
     if (fileConfig.openaiBaseURL) mergedConfig.openaiBaseURL = fileConfig.openaiBaseURL;
     if (fileConfig.theme) mergedConfig.theme = fileConfig.theme;
+    if (fileConfig.extraRequest) mergedConfig.extraRequest = fileConfig.extraRequest;
     
     // COBOT_* environment variables (medium priority)
     if (!mergedConfig.openaiApiKey && process.env.COBOT_OPENAI_API_KEY) {
@@ -178,6 +212,66 @@ class ConfigManager {
       this.writeConfigToFile(config);
     } catch (error) {
       throw new Error(`Failed to save theme preference: ${error}`);
+    }
+  }
+
+  public getExtraRequestString(): string | null {
+    const config = this.getConfig();
+    return config.extraRequest || null;
+  }
+
+  public getExtraRequest(): Record<string, unknown> {
+    const extraRequest = this.getExtraRequestString();
+
+    if (!extraRequest) {
+      return {};
+    }
+
+    try {
+      const parsedValue: unknown = JSON.parse(extraRequest);
+
+      if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+        console.warn('Ignoring extraRequest config: value must parse to a JSON object');
+        return {};
+      }
+
+      return parsedValue as Record<string, unknown>;
+    } catch (error) {
+      console.warn('Ignoring extraRequest config: failed to parse JSON:', error);
+      return {};
+    }
+  }
+
+  public setExtraRequest(extraRequest: string): void {
+    try {
+      const parsedValue: unknown = JSON.parse(extraRequest);
+
+      if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+        throw new Error('extraRequest must be a JSON object string');
+      }
+
+      const config = this.readConfigFromFile();
+      config.extraRequest = extraRequest;
+      this.writeConfigToFile(config);
+    } catch (error) {
+      throw new Error(`Failed to save extra request payload: ${error}`);
+    }
+  }
+
+  public clearExtraRequest(): void {
+    try {
+      const config = this.readConfigFromFile();
+      delete config.extraRequest;
+
+      if (Object.keys(config).length === 0) {
+        if (fs.existsSync(this.configPath)) {
+          fs.unlinkSync(this.configPath);
+        }
+      } else {
+        this.writeConfigToFile(config);
+      }
+    } catch (error) {
+      console.warn('Failed to clear extra request payload:', error);
     }
   }
 }
