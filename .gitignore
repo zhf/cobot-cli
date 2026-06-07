@@ -1,4 +1,37 @@
-node_modules
-dist
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment files
 .env
+.env.*
+
+# Logs
+logs/
+*.log
+debug-agent.log
+
+# Coverage and caches
+coverage/
+.cache/
+.parcel-cache/
+
+# Bun binary lockfile from older Bun versions
+bun.lockb
+
+# Local generated assets
+/cobot-cli.png
+/cobot-cli-dark.png
+
+# OS files
 .DS_Store
+
+# Ignore other coding agents
+.claude
+CLAUDE.md
+AGENTS/md
+
+/docs

@@ -21,26 +21,26 @@ The assistant is powered by OpenAI's advanced models and comes with a built-in t
 
 ### Run Instantly (Recommended)
 ```bash
-npx cobot-cli@latest
+bunx cobot-cli@latest
 ```
 
 ### Install Globally
 ```bash
-npm install -g cobot-cli@latest
+bun add -g cobot-cli@latest
 ```
 
 ### For Development
 ```bash
 git clone https://github.com/zhf/cobot-cli.git
 cd cobot-cli
-npm install
-npm run build
-npm link        # Enables the `cobot` command in any directory
+bun install
+bun run build
+bun link        # Enables the `cobot` command in any directory
 ```
 
 During development, you can run this in the background to automatically apply changes:
 ```bash
-npm run dev
+bun run dev
 ```
 
 ## Usage
@@ -61,13 +61,13 @@ cobot --model gpt-4o-mini
 cobot [options]
 
 Options:
-  -t, --temperature <temp>      Temperature for generation (default: 1.0)
-  -m, --model <model>           AI model to use for generation (default: gpt-4o)
-  -s, --system <message>        Custom system message
-  -d, --debug                   Enable debug logging to debug-agent.log in current directory
-  -p, --prompt <prompt>         Run in non-interactive mode with a predefined prompt
-  -h, --help                    Display help
-  -V, --version                 Display version number
+  -V, --version                    output the version number
+  -t, --temperature <temperature>  Temperature for generation (default: 1)
+  -m, --model <model>              AI model to use for generation (default: "gpt-4o-mini")
+  -s, --system <message>           Custom system message
+  -d, --debug                      Enable debug logging to debug-agent.log in current directory
+  -p, --prompt <prompt>            Run in non-interactive mode with a predefined prompt
+  -h, --help                       display help for command
 ```
 
 ### Getting Started
@@ -138,6 +138,7 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 #### Configuration Commands
 - `/apikey` - Set your OpenAI API key
 - `/baseurl` - Set custom OpenAI API base URL (for using alternate providers)
+- `/init` - Generate project context files in `.cobot/`
 - `/model` - Select your AI model from available options or enter custom model name
 
 #### Session Commands
@@ -233,17 +234,31 @@ All preferences are stored in `~/.cobot/config.json` with secure file permission
 
 ## Development
 
+This repository is Bun-first and uses a root Bun workspace. The CLI package remains at the repository root, and `packages/*` is reserved for future workspace packages.
+
+Requirements:
+- Bun 1.2.22 or newer
+- Node.js 16 or newer for the published CLI runtime
+
 ### Project Structure
 
 ```
 cobot-cli/
+├── bun.lock
+├── packages/                  # Future Bun workspace packages
 ├── src/
+│   ├── bin/
+│   │   └── cobot.ts            # CLI executable entry point
+│   ├── cli/
+│   │   ├── runPrompt.ts        # Non-interactive prompt mode
+│   │   └── startChat.ts        # Interactive Ink UI startup
 │   ├── commands/           
 │   │   ├── definitions/        # Individual command implementations
 │   │   │   ├── apikey.ts       # API key configuration command
 │   │   │   ├── baseurl.ts      # Base URL configuration command
 │   │   │   ├── clear.ts        # Clear chat history command
 │   │   │   ├── help.ts         # Help command
+│   │   │   ├── init.ts         # Project context initialization command
 │   │   │   ├── login.ts        # Authentication command
 │   │   │   ├── model.ts        # Model selection command
 │   │   │   ├── reasoning.ts    # Reasoning toggle command
@@ -253,31 +268,43 @@ cobot-cli/
 │   │   └── index.ts            # Command exports
 │   ├── core/               
 │   │   ├── agent.ts            # AI agent implementation
-│   │   └── cli.ts              # CLI entry point and setup
+│   │   ├── logger.ts           # Debug logging
+│   │   ├── messages.ts         # Message and API error types
+│   │   ├── openai-helper.ts    # OpenAI-compatible API helper
+│   │   └── tool-executor.ts    # Tool execution orchestration
+│   ├── config/
+│   │   └── ConfigManager.ts    # Configuration management
 │   ├── tools/              
-│   │   ├── tool-schemas.ts     # Tool schema definitions
-│   │   ├── tools.ts            # Tool implementations
-│   │   └── validators.ts       # Input validation utilities
+│   │   ├── schemas/            # Tool schema definitions
+│   │   ├── database.ts         # ClickHouse tools
+│   │   ├── exec.ts             # Shell command execution tool
+│   │   ├── files.ts            # File operation tools
+│   │   ├── formatters.ts       # Tool output formatting
+│   │   ├── media.ts            # Pandoc, ImageMagick, and FFmpeg tools
+│   │   ├── registry.ts         # Tool registry and dispatcher
+│   │   ├── search.ts           # File search tool
+│   │   ├── tasks.ts            # Task management tools
+│   │   ├── validators.ts       # Input validation utilities
+│   │   └── web.ts              # HTML generation tool
 │   ├── ui/                 
 │   │   ├── App.tsx             # Main application component
-│   │   ├── components/     
-│   │   │   ├── core/           # Core chat TUI components
-│   │   │   ├── display/        # Auxiliary components for TUI display
-│   │   │   └── input-overlays/ # Input overlays and modals that occupy the MessageInput box
+│   │   ├── chat/               # Chat view and input components
+│   │   ├── display/            # Auxiliary display components
+│   │   ├── hooks/              # Custom React hooks
 │   │   ├── overlays/           # Modal overlays for configuration commands
 │   │   │   ├── BaseURLSelector.tsx  # Base URL selection modal
+│   │   │   ├── ErrorRetry.tsx       # Error retry modal
 │   │   │   ├── Login.tsx           # API key input modal
-│   │   │   └── ModelSelector.tsx   # Model selection modal
-│   │   ├── hooks/             # Custom React hooks
-│   │   │   └── useTheme.ts      # Theme management hook
+│   │   │   ├── MaxIterationsContinue.tsx  # Iteration limit continuation modal
+│   │   │   ├── ModelSelector.tsx   # Model selection modal
+│   │   │   ├── PendingToolApproval.tsx  # Tool approval modal
+│   │   │   └── SlashCommandSuggestions.tsx  # Slash command suggestions
 │   │   └── theme.ts           # Theme color definitions
 │   └── utils/              
-│       ├── constants.ts        # Application constants
-│       ├── config/             # Configuration management
-│       │   └── ConfigManager.ts    # Handles API key, base URL, model, and theme configuration
+│       ├── context/            # Project context generation
+│       ├── context.ts          # Project context utilities
 │       ├── file-ops.ts         # File system operations
-│       ├── local-settings.ts   # Local configuration management
-│       └── markdown.ts         # Markdown processing utilities
+│       └── ignorePatterns.ts   # Ignore pattern defaults
 ├── docs/                   
 ├── package.json    
 ├── tsconfig.json        
@@ -287,15 +314,17 @@ cobot-cli/
 ### Available Scripts
 
 ```bash
-npm run build      # Build TypeScript to dist/
-npm run dev        # Build in watch mode
+bun run build      # Build TypeScript to dist/
+bun run dev        # Build in watch mode
+bun run start      # Run the built CLI with Bun
+bun run typecheck  # Type-check without emitting files
 ```
 
 ### Customization
 
 #### Adding New Tools
 
-1. Define the tool schema in `src/tools/tool-schemas.ts`:
+1. Define the tool schema in `src/tools/schemas/index.ts`:
 ```typescript
 export const YOUR_TOOL_SCHEMA: ToolSchema = {
   type: 'function',
@@ -313,7 +342,7 @@ export const YOUR_TOOL_SCHEMA: ToolSchema = {
 };
 ```
 
-2. Implement the tool function in `src/tools/tools.ts`:
+2. Implement the tool function in the relevant file under `src/tools/`:
 ```typescript
 export async function yourToolName(param1: string): Promise<ToolResult> {
   // Your implementation here
@@ -321,9 +350,9 @@ export async function yourToolName(param1: string): Promise<ToolResult> {
 }
 ```
 
-3. Register the tool in the `TOOL_REGISTRY` object and `executeTool` switch statement in `src/tools/tools.ts`.
+3. Register the tool in `TOOL_REGISTRY` in `src/tools/registry.ts`.
 
-4. Add the schema to `ALL_TOOL_SCHEMAS` array in `src/tools/tool-schemas.ts`.
+4. Add the schema to `ALL_TOOL_SCHEMAS` in `src/tools/schemas/index.ts`.
 
 #### Adding New Slash Commands
 
@@ -352,12 +381,12 @@ To change the start command from `cobot`, modify the `"bin"` section in `package
 ```json
 {
   "bin": {
-    "your-command": "dist/core/cli.js"
+    "your-command": "dist/bin/cobot.js"
   }
 }
 ```
 
-Then re-run `npm run build` and `npm link`.
+Then re-run `bun run build` and `bun link`.
 
 ## Contributing
 
@@ -365,4 +394,4 @@ Improvements through PRs are welcome! For issues and feature requests, please op
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.

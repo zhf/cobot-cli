@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 package-lock.json
+bun.lock
+bun.lockb
 
 # Build output (other than dist which is published)
 build/
