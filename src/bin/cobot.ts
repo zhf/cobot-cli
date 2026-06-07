@@ -4,6 +4,7 @@ import { startChat } from '../cli/startChat.js';
 import { runPrompt } from '../cli/runPrompt.js';
 import { buildPromptWithStdin } from '../cli/promptInput.js';
 import ConfigManager from '../config/ConfigManager.js';
+import { SeeyonChatClient, SeeyonChatError } from '../core/seeyon-chat.js';
 import { writeProjectContext } from '../utils/context/projectContext.js';
 
 interface GlobalOptions {
@@ -55,6 +56,8 @@ function printConfig(): void {
   console.log(`model: ${configManager.getDefaultModel() || 'not set'}`);
   console.log(`theme: ${configManager.getTheme()}`);
   console.log(`extraRequest: ${configManager.getExtraRequestString() || 'not set'}`);
+  console.log(`seeyonChatApiKey: ${maskSecret(configManager.getSeeyonChatApiKey())}`);
+  console.log(`seeyonChatEndpoint: ${configManager.getSeeyonChatEndpoint()}`);
 }
 
 function setConfigValue(key: string, value: string): void {
@@ -87,6 +90,16 @@ function setConfigValue(key: string, value: string): void {
       configManager.setExtraRequest(value);
       console.log('Extra request payload saved.');
       break;
+    case 'seeyonchatapikey':
+    case 'seeyon-chat-api-key':
+      configManager.setSeeyonChatApiKey(value);
+      console.log('Seeyon Chat API key saved.');
+      break;
+    case 'seeyonchatendpoint':
+    case 'seeyon-chat-endpoint':
+      configManager.setSeeyonChatEndpoint(value);
+      console.log('Seeyon Chat endpoint saved.');
+      break;
     default:
       exitWithError(`Unknown config key: ${key}`);
   }
@@ -111,17 +124,75 @@ function clearConfigValue(key: string): void {
       configManager.clearExtraRequest();
       console.log('Extra request payload cleared.');
       break;
+    case 'seeyonchatapikey':
+    case 'seeyon-chat-api-key':
+      configManager.clearSeeyonChatApiKey();
+      console.log('Seeyon Chat API key cleared.');
+      break;
+    case 'seeyonchatendpoint':
+    case 'seeyon-chat-endpoint':
+      configManager.clearSeeyonChatEndpoint();
+      console.log('Seeyon Chat endpoint cleared.');
+      break;
     default:
       exitWithError(`Cannot clear config key: ${key}`);
   }
+}
+
+async function listSeeyonAgents(): Promise<void> {
+  try {
+    const client = SeeyonChatClient.fromConfig();
+    const agents = await client.listAgents();
+
+    if (agents.length === 0) {
+      console.log('No Seeyon Chat agents are accessible for this account.');
+      return;
+    }
+
+    agents.forEach((agent) => {
+      const visibility = agent.public ? 'public' : 'private';
+      const description = agent.description ? ` - ${agent.description}` : '';
+      console.log(`${agent.name} (${visibility})${description}`);
+    });
+  } catch (error) {
+    handleSeeyonError(error);
+  }
+}
+
+async function runSeeyonAgent(agentReference: string, prompt: string): Promise<void> {
+  if (!prompt.trim()) {
+    exitWithError('Provide a prompt argument or pipe input to stdin.');
+  }
+
+  try {
+    const client = SeeyonChatClient.fromConfig();
+    const agent = await client.resolveAgent(agentReference);
+    const result = await client.runAgent(agent._id, { input: prompt });
+
+    console.log(result.content);
+  } catch (error) {
+    handleSeeyonError(error);
+  }
+}
+
+function handleSeeyonError(error: unknown): never {
+  if (error instanceof SeeyonChatError) {
+    exitWithError(`Seeyon Chat error: ${error.message}`);
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  exitWithError(`Seeyon Chat error: ${message}`);
 }
 
 const program = new Command();
 
 program
   .name('cobot')
+  .usage('[options] [agentName] [agentPrompt...]')
   .description('Cobot CLI')
   .version('1.0.0')
+  .argument('[agentName]', 'Seeyon Chat agent name or chatbot id to run')
+  .argument('[agentPrompt...]', 'Prompt for the Seeyon Chat agent')
   .option('-t, --temperature <temperature>', 'Temperature for generation', parseFloat, 1.0)
   .option('-m, --model <model>', 'AI model to use for generation', 'gpt-4o-mini')
   .option('-s, --system <message>', 'Custom system message')
@@ -129,11 +200,15 @@ program
   .option('-p, --prompt <prompt>', 'Run in non-interactive mode with a predefined prompt')
   .showHelpAfterError()
   .showSuggestionAfterError()
-  .action(async (options) => {
+  .action(async (agentName: string | undefined, agentPrompt: string[] | undefined, options: GlobalOptions) => {
     if (options.prompt) {
       const fullPrompt = await buildPromptWithStdin(options.prompt);
 
       await runPromptCommand(fullPrompt);
+    } else if (agentName) {
+      const prompt = await buildPromptWithStdin((agentPrompt || []).join(' '));
+
+      await runSeeyonAgent(agentName, prompt);
     } else {
       await startChat(
         options.model,
@@ -142,6 +217,22 @@ program
         options.debug,
       );
     }
+  });
+
+program
+  .command('agents')
+  .description('List Seeyon Chat agents accessible to the configured account')
+  .action(async () => {
+    await listSeeyonAgents();
+  });
+
+program
+  .command('agent <agentName> [prompt...]')
+  .description('Run a Seeyon Chat agent by name or chatbot id in non-interactive mode')
+  .action(async (agentName: string, promptParts: string[]) => {
+    const prompt = await buildPromptWithStdin(promptParts.join(' '));
+
+    await runSeeyonAgent(agentName, prompt);
   });
 
 program
@@ -187,14 +278,14 @@ configCommand
 
 configCommand
   .command('set <key> <value>')
-  .description('Set a config value: apikey, baseurl, model, theme, or extraRequest')
+  .description('Set a config value: apikey, baseurl, model, theme, extraRequest, seeyonChatApiKey, or seeyonChatEndpoint')
   .action((key: string, value: string) => {
     setConfigValue(key, value);
   });
 
 configCommand
   .command('clear <key>')
-  .description('Clear a config value: apikey, baseurl, or extraRequest')
+  .description('Clear a config value: apikey, baseurl, extraRequest, seeyonChatApiKey, or seeyonChatEndpoint')
   .action((key: string) => {
     clearConfigValue(key);
   });
