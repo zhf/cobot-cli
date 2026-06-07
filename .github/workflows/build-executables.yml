@@ -1,0 +1,44 @@
+name: Build Executables
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build executable artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.22
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build package
+        run: bun run build
+
+      - name: Build macOS ARM64 executable
+        run: bun build --compile --target=bun-darwin-arm64 ./src/bin/cobot.ts --outfile ./artifacts/cobot-darwin-arm64
+
+      - name: Build Windows AMD64 executable
+        run: bun build --compile --target=bun-windows-x64 ./src/bin/cobot.ts --outfile ./artifacts/cobot-windows-amd64.exe
+
+      - name: Upload executable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobot-executables
+          path: |
+            artifacts/cobot-darwin-arm64
+            artifacts/cobot-windows-amd64.exe
+          if-no-files-found: error
