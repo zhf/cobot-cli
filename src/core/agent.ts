@@ -279,6 +279,10 @@ Never generate markdown tables. Be brief and efficient.
     this.messages = this.messages.filter((msg) => msg.role === 'system');
   }
 
+  public addContextMessage(content: string): void {
+    this.messages.push({ role: 'system', content });
+  }
+
   public setModel(model: string): void {
     this.model = model;
     // Save as default model

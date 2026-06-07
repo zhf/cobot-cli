@@ -8,10 +8,13 @@ interface Config {
   openaiBaseURL?: string;
   theme?: 'dark' | 'light';
   extraRequest?: string;
+  seeyonChatApiKey?: string;
+  seeyonChatEndpoint?: string;
 }
 
 const CONFIG_DIRECTORY_NAME = '.cobot'; // In home directory
 const CONFIG_FILE_NAME = 'config.json';
+const DEFAULT_SEEYON_CHAT_ENDPOINT = process.env.NODE_ENV === 'development' ? 'http://localhost:3001' : 'https://seeyon.chat';
 
 function expandEnvironmentVariables(value: string): string {
   return value.replace(/\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g, (match, bracedName: string | undefined, bareName: string | undefined) => {
@@ -36,6 +39,8 @@ function expandConfig(config: Config): Config {
   if (config.defaultModel) expandedConfig.defaultModel = expandEnvironmentVariables(config.defaultModel);
   if (config.openaiBaseURL) expandedConfig.openaiBaseURL = expandEnvironmentVariables(config.openaiBaseURL);
   if (config.extraRequest) expandedConfig.extraRequest = expandEnvironmentVariables(config.extraRequest);
+  if (config.seeyonChatApiKey) expandedConfig.seeyonChatApiKey = expandEnvironmentVariables(config.seeyonChatApiKey);
+  if (config.seeyonChatEndpoint) expandedConfig.seeyonChatEndpoint = expandEnvironmentVariables(config.seeyonChatEndpoint);
 
   if (config.theme) {
     const expandedTheme = expandEnvironmentVariables(config.theme);
@@ -60,7 +65,6 @@ class ConfigManager {
     }
   }
 
-  
   private readConfigFromFile(): Config {
     try {
       if (!fs.existsSync(this.configPath)) {
@@ -75,7 +79,7 @@ class ConfigManager {
   }
 
   private getConfig(): Config {
-    // Priority: Config File > COBOT_* env vars > OPENAI_* env vars > Defaults
+    // Priority: Config File > COBOT_* env vars > provider env vars > defaults
     const fileConfig = expandConfig(this.readConfigFromFile());
     const mergedConfig: Config = {};
     
@@ -85,6 +89,8 @@ class ConfigManager {
     if (fileConfig.openaiBaseURL) mergedConfig.openaiBaseURL = fileConfig.openaiBaseURL;
     if (fileConfig.theme) mergedConfig.theme = fileConfig.theme;
     if (fileConfig.extraRequest) mergedConfig.extraRequest = fileConfig.extraRequest;
+    if (fileConfig.seeyonChatApiKey) mergedConfig.seeyonChatApiKey = fileConfig.seeyonChatApiKey;
+    if (fileConfig.seeyonChatEndpoint) mergedConfig.seeyonChatEndpoint = fileConfig.seeyonChatEndpoint;
     
     // COBOT_* environment variables (medium priority)
     if (!mergedConfig.openaiApiKey && process.env.COBOT_OPENAI_API_KEY) {
@@ -96,6 +102,20 @@ class ConfigManager {
     if (!mergedConfig.openaiBaseURL && process.env.COBOT_OPENAI_BASE_URL) {
       mergedConfig.openaiBaseURL = process.env.COBOT_OPENAI_BASE_URL;
     }
+    if (!mergedConfig.seeyonChatApiKey && process.env.COBOT_SEEYON_CHAT_API_KEY) {
+      mergedConfig.seeyonChatApiKey = process.env.COBOT_SEEYON_CHAT_API_KEY;
+    }
+    if (!mergedConfig.seeyonChatEndpoint && process.env.COBOT_SEEYON_CHAT_ENDPOINT) {
+      mergedConfig.seeyonChatEndpoint = process.env.COBOT_SEEYON_CHAT_ENDPOINT;
+    }
+
+    // SEEYON_* environment variables (fallback aliases)
+    if (!mergedConfig.seeyonChatApiKey && process.env.SEEYON_CHAT_API_KEY) {
+      mergedConfig.seeyonChatApiKey = process.env.SEEYON_CHAT_API_KEY;
+    }
+    if (!mergedConfig.seeyonChatEndpoint && process.env.SEEYON_CHAT_ENDPOINT) {
+      mergedConfig.seeyonChatEndpoint = process.env.SEEYON_CHAT_ENDPOINT;
+    }
     
     // OPENAI_* environment variables (lowest priority, as fallback)
     if (!mergedConfig.openaiApiKey && process.env.OPENAI_API_KEY) {
@@ -106,6 +126,23 @@ class ConfigManager {
     }
     
     return mergedConfig;
+  }
+
+  private removeConfigValue(key: keyof Config, warningMessage: string): void {
+    try {
+      const config = this.readConfigFromFile();
+      delete config[key];
+
+      if (Object.keys(config).length === 0) {
+        if (fs.existsSync(this.configPath)) {
+          fs.unlinkSync(this.configPath);
+        }
+      } else {
+        this.writeConfigToFile(config);
+      }
+    } catch (error) {
+      console.warn(warningMessage, error);
+    }
   }
 
   private writeConfigToFile(config: Config): void {
@@ -137,20 +174,7 @@ class ConfigManager {
   }
 
   public clearApiKey(): void {
-    try {
-      const config = this.readConfigFromFile();
-      delete config.openaiApiKey;
-
-      if (Object.keys(config).length === 0) {
-        if (fs.existsSync(this.configPath)) {
-          fs.unlinkSync(this.configPath);
-        }
-      } else {
-        this.writeConfigToFile(config);
-      }
-    } catch (error) {
-      console.warn('Failed to clear API key:', error);
-    }
+    this.removeConfigValue('openaiApiKey', 'Failed to clear API key:');
   }
 
   public getDefaultModel(): string | null {
@@ -184,20 +208,7 @@ class ConfigManager {
   }
 
   public clearBaseURL(): void {
-    try {
-      const config = this.readConfigFromFile();
-      delete config.openaiBaseURL;
-
-      if (Object.keys(config).length === 0) {
-        if (fs.existsSync(this.configPath)) {
-          fs.unlinkSync(this.configPath);
-        }
-      } else {
-        this.writeConfigToFile(config);
-      }
-    } catch (error) {
-      console.warn('Failed to clear base URL:', error);
-    }
+    this.removeConfigValue('openaiBaseURL', 'Failed to clear base URL:');
   }
 
   public getTheme(): 'dark' | 'light' {
@@ -259,20 +270,45 @@ class ConfigManager {
   }
 
   public clearExtraRequest(): void {
+    this.removeConfigValue('extraRequest', 'Failed to clear extra request payload:');
+  }
+
+  public getSeeyonChatApiKey(): string | null {
+    const config = this.getConfig();
+    return config.seeyonChatApiKey || null;
+  }
+
+  public setSeeyonChatApiKey(apiKey: string): void {
     try {
       const config = this.readConfigFromFile();
-      delete config.extraRequest;
-
-      if (Object.keys(config).length === 0) {
-        if (fs.existsSync(this.configPath)) {
-          fs.unlinkSync(this.configPath);
-        }
-      } else {
-        this.writeConfigToFile(config);
-      }
+      config.seeyonChatApiKey = apiKey;
+      this.writeConfigToFile(config);
     } catch (error) {
-      console.warn('Failed to clear extra request payload:', error);
+      throw new Error(`Failed to save Seeyon Chat API key: ${error}`);
     }
+  }
+
+  public clearSeeyonChatApiKey(): void {
+    this.removeConfigValue('seeyonChatApiKey', 'Failed to clear Seeyon Chat API key:');
+  }
+
+  public getSeeyonChatEndpoint(): string {
+    const config = this.getConfig();
+    return config.seeyonChatEndpoint || DEFAULT_SEEYON_CHAT_ENDPOINT;
+  }
+
+  public setSeeyonChatEndpoint(endpoint: string): void {
+    try {
+      const config = this.readConfigFromFile();
+      config.seeyonChatEndpoint = endpoint;
+      this.writeConfigToFile(config);
+    } catch (error) {
+      throw new Error(`Failed to save Seeyon Chat endpoint: ${error}`);
+    }
+  }
+
+  public clearSeeyonChatEndpoint(): void {
+    this.removeConfigValue('seeyonChatEndpoint', 'Failed to clear Seeyon Chat endpoint:');
   }
 }
 
