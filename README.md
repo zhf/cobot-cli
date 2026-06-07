@@ -60,6 +60,14 @@ Run a one-off non-interactive prompt:
 cobot run "summarize this project"
 ```
 
+Run a Seeyon Chat agent by name:
+```bash
+cobot agents
+cobot agent "Agent Name" "summarize this project"
+cobot "Agent Name" "summarize this project"
+cobot agent 665f1c1234567890abcdef12 "summarize this project"
+```
+
 You can also pipe context into either `run` or the legacy `--prompt` option:
 ```bash
 git diff | cobot run "review these changes"
@@ -77,6 +85,8 @@ cobot init
 cobot [options] [command]
 
 Commands:
+  agents                      List Seeyon Chat agents accessible to the configured account
+  agent <agentName> [prompt...] Run a Seeyon Chat agent by name or chatbot id in non-interactive mode
   run [prompt...]             Run in non-interactive mode with a prompt
   init                        Generate project context files in .cobot/
   config                      Manage stored Cobot configuration
@@ -100,9 +110,13 @@ cobot config set baseurl <url>
 cobot config set model <model>
 cobot config set theme <dark|light>
 cobot config set extraRequest '{"reasoning_effort":"low"}'
+cobot config set seeyonChatApiKey <key>
+cobot config set seeyonChatEndpoint https://seeyon.chat
 cobot config clear apikey
 cobot config clear baseurl
 cobot config clear extraRequest
+cobot config clear seeyonChatApiKey
+cobot config clear seeyonChatEndpoint
 ```
 
 ### Getting Started
@@ -133,6 +147,13 @@ You can also use `/model` inside interactive chat to choose from available model
 ```
 Toggle between light and dark themes. Your preference is automatically saved.
 
+5. **Configure Seeyon Chat agents** (optional):
+```bash
+cobot config set seeyonChatApiKey your_seeyon_api_key_here
+cobot config set seeyonChatEndpoint https://seeyon.chat
+```
+Use `/cobot` inside interactive chat to pick a Seeyon Chat agent and send a prompt. The request and response are added to the local assistant context.
+
 This creates a `.cobot/` folder in your home directory to store your configuration, including your theme preference.
 
 #### Environment Variables
@@ -145,7 +166,12 @@ Cobot CLI supports environment variables with a priority system:
    - `COBOT_OPENAI_API_KEY`
    - `COBOT_OPENAI_BASE_URL` 
    - `COBOT_DEFAULT_MODEL`
-3. **OPENAI_* Environment Variables** (fallback):
+   - `COBOT_SEEYON_CHAT_API_KEY`
+   - `COBOT_SEEYON_CHAT_ENDPOINT`
+3. **SEEYON_* Environment Variables**:
+   - `SEEYON_CHAT_API_KEY`
+   - `SEEYON_CHAT_ENDPOINT`
+4. **OPENAI_* Environment Variables** (fallback):
    - `OPENAI_API_KEY`
    - `OPENAI_BASE_URL`
 
@@ -156,6 +182,12 @@ Cobot CLI supports environment variables with a priority system:
 export COBOT_OPENAI_API_KEY=your_api_key_here
 export COBOT_OPENAI_BASE_URL=https://api.openai.com/v1
 export COBOT_DEFAULT_MODEL=gpt-4o
+export COBOT_SEEYON_CHAT_API_KEY=your_seeyon_api_key_here
+export COBOT_SEEYON_CHAT_ENDPOINT=https://seeyon.chat
+
+# SEEYON_* aliases
+export SEEYON_CHAT_API_KEY=your_seeyon_api_key_here
+export SEEYON_CHAT_ENDPOINT=http://localhost:3001
 
 # OPENAI_* variables (fallback, lower priority)
 export OPENAI_API_KEY=your_api_key_here
@@ -166,8 +198,9 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 - If a value exists in the config file, it will always be used first
 - Config file string values may reference environment variables with `$VAR` or `${VAR}` syntax, and Cobot expands them when reading config
 - `extraRequest` is a JSON object serialized as a string; it is merged into every model request as default request body fields before code-controlled fields like `model`, `messages`, `tools`, and token limits are applied
+- `seeyonChatEndpoint` defaults to `http://localhost:3001` when `NODE_ENV=development`; otherwise it defaults to `https://seeyon.chat`
 - If no config file value exists, COBOT_* variables are checked
-- If no COBOT_* variables are set, OPENAI_* variables are used as fallback
+- If no COBOT_* variables are set, SEEYON_* and OPENAI_* variables are used as fallbacks
 - This allows for flexible configuration in different environments
 
 ### Available Commands
@@ -175,6 +208,7 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 #### Configuration Commands
 - `/apikey` - Set your OpenAI API key
 - `/baseurl` - Set custom OpenAI API base URL (for using alternate providers)
+- `/cobot` - Pick and run a Seeyon Chat agent, then add its request/response to the local context
 - `/init` - Generate project context files in `.cobot/`
 - `/model` - Select your AI model from available options or enter custom model name
 
@@ -261,11 +295,13 @@ All preferences are stored in `~/.cobot/config.json` with secure file permission
   "defaultModel": "gpt-4o-mini",
   "openaiBaseURL": "$OPENAI_BASE_URL",
   "extraRequest": "{\"reasoning_effort\":\"low\"}",
+  "seeyonChatApiKey": "$SEEYON_CHAT_API_KEY",
+  "seeyonChatEndpoint": "$SEEYON_CHAT_ENDPOINT",
   "theme": "dark"
 }
 ```
 
-- **API Configuration**: API keys, base URLs, model preferences, and optional extra request defaults
+- **API Configuration**: API keys, base URLs, Seeyon Chat endpoint, model preferences, and optional extra request defaults
 - **Theme Settings**: Light/dark theme preference (automatically persisted)
 - **Security**: Owner-only read/write permissions for sensitive data
 - **Migration**: Existing configurations remain compatible
