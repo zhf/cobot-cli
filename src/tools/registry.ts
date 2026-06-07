@@ -29,21 +29,27 @@ import { deleteFile } from './files.js';
 import { listFiles } from './files.js';
 import { openFile } from './files.js';
 import { searchFiles } from './search.js';
+import { glob } from './glob.js';
 import { executeCommand } from './exec.js';
 import { createTasks } from './tasks.js';
 import { updateTasks } from './tasks.js';
 import { convertDocument, processImage, batchProcessImages, processMedia } from './media.js';
 import { createWebPage } from './web.js';
 import { getClickHouseSchema, executeClickHouseQuery } from './database.js';
+import { applyPatch } from './apply-patch.js';
+import { webfetch } from './webfetch.js';
+import { skill } from './skill.js';
 
 // Tool Registry: maps tool names to functions
 export const TOOL_REGISTRY = {
   read_file: readFile,
   create_file: createFile,
   edit_file: editFile,
+  apply_patch: applyPatch,
   delete_file: deleteFile,
   list_files: listFiles,
   open_file: openFile,
+  glob,
   create_web_page: createWebPage,
   search_files: searchFiles,
   execute_command: executeCommand,
@@ -53,6 +59,8 @@ export const TOOL_REGISTRY = {
   process_image: processImage,
   batch_process_images: batchProcessImages,
   process_media: processMedia,
+  webfetch,
+  skill,
   get_clickhouse_schema: getClickHouseSchema,
   execute_clickhouse_query: executeClickHouseQuery,
 };
@@ -79,12 +87,16 @@ export async function executeTool(toolName: string, toolArgs: Record<string, any
         return await toolFunction(toolArgs.file_path, toolArgs.content, toolArgs.file_type, toolArgs.overwrite);
       case 'edit_file':
         return await toolFunction(toolArgs.file_path, toolArgs.old_text, toolArgs.new_text, toolArgs.replace_all);
+      case 'apply_patch':
+        return await toolFunction(toolArgs.patchText);
       case 'delete_file':
         return await toolFunction(toolArgs.file_path, toolArgs.recursive);
       case 'list_files':
         return await toolFunction(toolArgs.directory, toolArgs.pattern, toolArgs.recursive, toolArgs.show_hidden);
       case 'open_file':
         return await toolFunction(toolArgs.file_path, toolArgs.with_app);
+      case 'glob':
+        return await toolFunction(toolArgs.pattern, toolArgs.path);
       case 'create_web_page':
         return await toolFunction(toolArgs.prompt, toolArgs.file_path, toolArgs.style, toolArgs.color_scheme, toolArgs.overwrite);
       case 'search_files':
@@ -115,6 +127,10 @@ export async function executeTool(toolName: string, toolArgs: Record<string, any
         return await toolFunction(toolArgs.command_string);
       case 'process_media':
         return await toolFunction(toolArgs.command_string);
+      case 'webfetch':
+        return await toolFunction(toolArgs.url, toolArgs.format, toolArgs.timeout);
+      case 'skill':
+        return await toolFunction(toolArgs.name);
       case 'get_clickhouse_schema':
         return await toolFunction(
           toolArgs.host,

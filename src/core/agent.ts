@@ -4,15 +4,17 @@ import fs from 'fs';
 import path from 'path';
 import { executeTool, ToolResult } from '../tools/registry.js';
 import { hasFileBeenReadBeforeEdit, getReadBeforeEditErrorMessage } from '../tools/validators.js';
-import { ALL_TOOL_SCHEMAS } from '../tools/schemas/index.js';
+import { ALL_TOOL_SCHEMAS, ToolSchema } from '../tools/schemas/index.js';
 import ConfigManager from '../config/ConfigManager.js';
 import { Message, ToolCall, ApiError } from './messages.js';
 import { debugLog, setDebugLoggingEnabled } from './logger.js';
 import { buildChatCompletionPayload, createStreamingChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
+import { QuestionAnswer, QuestionPrompt } from '../tools/question.js';
+import { skillDescriptionSuffix } from '../tools/skill.js';
 import {
   CodingAgentInfo,
-  filterToolSchemasForAgent,
+  getToolPermissionAction,
   loadCodingAgents,
   resolveCodingAgent,
 } from './coding-agents.js';
@@ -50,6 +52,8 @@ export class Agent {
     approved: boolean;
     autoApproveSession?: boolean;
   }>;
+
+  private onQuestion?: (questions: QuestionPrompt[]) => Promise<QuestionAnswer[]>;
 
   private onThinkingText?: (content: string, reasoning?: string) => void;
 
@@ -164,6 +168,8 @@ File Operations:
 - To replace an existing file, use create_file with overwrite=true.
 - Unsure? Use list_files or read_file to check.
 - Always read_file before editing any file.
+- Prefer glob for finding files by filename pattern. Use search_files for searching file contents.
+- Prefer apply_patch for multi-file edits, moves, and coordinated changes.
 
 Tool Usage:
 - Use the "file_path" parameter for file operations—avoid "path".
@@ -223,6 +229,7 @@ Current working directory: ${cwd}
     onToolStart?: (name: string, args: Record<string, unknown>) => void;
     onToolEnd?: (name: string, result: unknown) => void;
     onToolApproval?: (toolName: string, toolArgs: Record<string, unknown>) => Promise<{ approved: boolean; autoApproveSession?: boolean }>;
+    onQuestion?: (questions: QuestionPrompt[]) => Promise<QuestionAnswer[]>;
     onThinkingText?: (content: string, reasoning?: string) => void;
     onFinalMessage?: (content: string, reasoning?: string) => void;
     onStreamStart?: () => string;
@@ -234,6 +241,7 @@ Current working directory: ${cwd}
     this.onToolStart = callbacks.onToolStart;
     this.onToolEnd = callbacks.onToolEnd;
     this.onToolApproval = callbacks.onToolApproval;
+    this.onQuestion = callbacks.onQuestion;
     this.onThinkingText = callbacks.onThinkingText;
     this.onFinalMessage = callbacks.onFinalMessage;
     this.onStreamStart = callbacks.onStreamStart;
@@ -342,6 +350,25 @@ Current working directory: ${cwd}
       finishReason,
       usage,
     };
+  }
+
+  private getToolSchemas(): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    const toolSchemas: ToolSchema[] = ALL_TOOL_SCHEMAS.filter((toolSchema) => getToolPermissionAction(toolSchema.function.name, this.codingAgent) !== 'deny')
+      .map((toolSchema) => {
+      if (toolSchema.function.name !== 'skill') {
+        return toolSchema;
+      }
+
+      return {
+        ...toolSchema,
+        function: {
+          ...toolSchema.function,
+          description: `${toolSchema.function.description}\n\n${skillDescriptionSuffix()}`,
+        },
+      };
+    });
+
+    return toolSchemas as OpenAI.Chat.Completions.ChatCompletionTool[];
   }
 
   public setApiKey(apiKey: string): void {
@@ -599,7 +626,7 @@ Current working directory: ${cwd}
             messages: this.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
             temperature: this.temperature,
             max_tokens: 8000,
-            tools: filterToolSchemasForAgent(ALL_TOOL_SCHEMAS, this.codingAgent),
+            tools: this.getToolSchemas(),
             tool_choice: 'auto',
             stream: true,
             stream_options: { include_usage: true },
@@ -691,6 +718,7 @@ Current working directory: ${cwd}
                 onToolStart: this.onToolStart,
                 onToolEnd: this.onToolEnd,
                 onToolApproval: this.onToolApproval,
+                onQuestion: this.onQuestion,
               };
               
               const options: ToolExecutorOptions = {

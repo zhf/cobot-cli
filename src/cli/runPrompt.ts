@@ -1,5 +1,15 @@
 import chalk from 'chalk';
 import { Agent } from '../core/agent.js';
+import { QuestionPrompt } from '../tools/question.js';
+
+function answerQuestion(question: QuestionPrompt): string[] {
+  const firstOption = question.options[0]?.label;
+  if (firstOption) {
+    return [firstOption];
+  }
+
+  return question.custom === false ? [] : ['No preference'];
+}
 
 /**
  * Run the agent in non-interactive mode with a predefined prompt.
@@ -39,7 +49,9 @@ export async function runPrompt(
       },
       onToolEnd: (name: string, result: any) => {
         // In non-interactive mode, we don't show tool results
-      }
+      },
+      onToolApproval: async () => ({ approved: true }),
+      onQuestion: async (questions: QuestionPrompt[]) => questions.map(answerQuestion),
     });
 
     // Run the agent with the provided prompt

@@ -3,6 +3,7 @@ import { ToolResult } from '../tools/registry.js';
 import { hasFileBeenReadBeforeEdit, getReadBeforeEditErrorMessage } from '../tools/validators.js';
 import { executeTool } from '../tools/registry.js';
 import { CodingAgentInfo, getToolPermissionAction } from './coding-agents.js';
+import { QuestionAnswer, QuestionPrompt, formatQuestionResult, validateQuestions } from '../tools/question.js';
 
 export interface ToolExecutorCallbacks {
   onToolStart?: (name: string, args: Record<string, unknown>) => void;
@@ -11,6 +12,7 @@ export interface ToolExecutorCallbacks {
     approved: boolean;
     autoApproveSession?: boolean;
   }>;
+  onQuestion?: (questions: QuestionPrompt[]) => Promise<QuestionAnswer[]>;
 }
 
 export interface ToolExecutorOptions {
@@ -114,6 +116,32 @@ export async function executeToolCall(
         }
         return result;
       }
+    }
+
+    if (toolName === 'question') {
+      const questions = validateQuestions(toolArguments.questions);
+      if (!questions) {
+        const result = { error: 'Error: Invalid question payload', success: false };
+        if (callbacks.onToolEnd) {
+          callbacks.onToolEnd(toolName, result);
+        }
+        return result;
+      }
+
+      if (!callbacks.onQuestion) {
+        const result = { error: 'Error: Question UI is not available', success: false };
+        if (callbacks.onToolEnd) {
+          callbacks.onToolEnd(toolName, result);
+        }
+        return result;
+      }
+
+      const answers = await callbacks.onQuestion(questions);
+      const result = formatQuestionResult(questions, answers);
+      if (callbacks.onToolEnd) {
+        callbacks.onToolEnd(toolName, result);
+      }
+      return result;
     }
 
     // Execute tool

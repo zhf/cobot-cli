@@ -87,6 +87,14 @@ export default function PendingToolApproval({
         </Box>
       )}
 
+      {toolName === 'apply_patch' && typeof toolArgs.patchText === 'string' && (
+        <Box borderStyle="round" borderColor="yellow" paddingX={1}>
+          <Text color="yellow">
+            {toolArgs.patchText.length > 4000 ? `${toolArgs.patchText.slice(0, 4000)}\n... patch truncated` : toolArgs.patchText}
+          </Text>
+        </Box>
+      )}
+
       {/* Approval options */}
       <Box flexDirection="column">
         <Text color="yellow">

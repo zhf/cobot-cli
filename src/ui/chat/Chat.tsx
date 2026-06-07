@@ -20,6 +20,7 @@ import MessageHistory from './MessageHistory.js';
 import MessageInput from './MessageInput.js';
 import TokenMetrics from '../display/TokenMetrics.js';
 import PendingToolApproval from '../overlays/PendingToolApproval.js';
+import PendingQuestion from '../overlays/PendingQuestion.js';
 import Login from '../overlays/Login.js';
 import ModelSelector from '../overlays/ModelSelector.js';
 import MaxIterationsContinue from '../overlays/MaxIterationsContinue.js';
@@ -107,12 +108,14 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
     isProcessing,
     currentToolExecution,
     pendingApproval,
+    pendingQuestion,
     pendingMaxIterations,
     pendingError,
     sessionAutoApprove,
     showReasoning,
     sendMessage,
     approveToolExecution,
+    respondToQuestion,
     respondToMaxIterations,
     respondToError,
     addMessage,
@@ -282,13 +285,13 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
       exitApplication();
     }
     if (key.shift && key.tab) {
-      if (!isProcessing && !pendingApproval && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner) {
+      if (!isProcessing && !pendingApproval && !pendingQuestion && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner) {
         handleCycleCodingAgent();
       }
       return;
     }
     if (key.tab && !inputValue.trim()) {
-      if (!isProcessing && !pendingApproval && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner) {
+      if (!isProcessing && !pendingApproval && !pendingQuestion && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner) {
         toggleAutoApprove();
       }
       return;
@@ -301,6 +304,9 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
       // If waiting for tool approval, reject the tool
       else if (pendingApproval) {
         handleToolApprovalDecision(false);
+      }
+      else if (pendingQuestion) {
+        respondToQuestion(pendingQuestion.questions.map(() => []));
       }
       // If model is actively processing (but not waiting for approval or executing tools after approval)
       else if (isProcessing && !currentToolExecution) {
@@ -324,8 +330,8 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
 
   // Hide input when processing, waiting for approval, error retry, or showing overlays
   useEffect(() => {
-    setShowInput(!isProcessing && !pendingApproval && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner);
-  }, [isProcessing, pendingApproval, pendingError, showApiLogin, showModelSelector, showBaseURLSelector, showSeeyonAgentRunner]);
+    setShowInput(!isProcessing && !pendingApproval && !pendingQuestion && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner);
+  }, [isProcessing, pendingApproval, pendingQuestion, pendingError, showApiLogin, showModelSelector, showBaseURLSelector, showSeeyonAgentRunner]);
 
   const handleUserMessageSubmission = async (message: string) => {
     if (message.trim() && !isProcessing) {
@@ -518,6 +524,11 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
             error={pendingError.error}
             onRetry={handleErrorRetry}
             onCancel={handleErrorCancel}
+          />
+        ) : pendingQuestion ? (
+          <PendingQuestion
+            questions={pendingQuestion.questions}
+            onSubmit={respondToQuestion}
           />
         ) : showApiLogin ? (
           <Login

@@ -6,7 +6,7 @@ import type { ToolSchema } from '../tools/schemas/index.js';
 
 export type AgentMode = 'primary' | 'subagent' | 'all';
 export type PermissionAction = 'allow' | 'ask' | 'deny';
-export type PermissionKey = 'read' | 'edit' | 'bash' | 'task' | 'database' | 'media';
+export type PermissionKey = 'read' | 'edit' | 'bash' | 'task' | 'database' | 'media' | 'web' | 'interaction' | 'skill';
 
 export type PermissionConfig = Partial<Record<PermissionKey, PermissionAction>>;
 
@@ -48,13 +48,18 @@ const TOOL_PERMISSIONS: Record<string, PermissionKey> = {
   read_file: 'read',
   search_files: 'read',
   list_files: 'read',
+  glob: 'read',
   create_file: 'edit',
   edit_file: 'edit',
+  apply_patch: 'edit',
   delete_file: 'edit',
   create_web_page: 'edit',
   execute_command: 'bash',
   create_tasks: 'task',
   update_tasks: 'task',
+  question: 'interaction',
+  skill: 'skill',
+  webfetch: 'web',
   convert_document: 'media',
   process_image: 'media',
   batch_process_images: 'media',
@@ -70,6 +75,9 @@ const DEFAULT_PERMISSIONS: Required<PermissionConfig> = {
   task: 'allow',
   database: 'ask',
   media: 'ask',
+  web: 'ask',
+  interaction: 'allow',
+  skill: 'allow',
 };
 
 const PLAN_PERMISSIONS: Required<PermissionConfig> = {
@@ -79,6 +87,9 @@ const PLAN_PERMISSIONS: Required<PermissionConfig> = {
   task: 'allow',
   database: 'deny',
   media: 'deny',
+  web: 'ask',
+  interaction: 'allow',
+  skill: 'allow',
 };
 
 function createYoloPermissions(): Required<PermissionConfig> {
@@ -109,7 +120,7 @@ function isAgentMode(value: unknown): value is AgentMode {
 }
 
 function isPermissionKey(value: string): value is PermissionKey {
-  return value === 'read' || value === 'edit' || value === 'bash' || value === 'task' || value === 'database' || value === 'media';
+  return value === 'read' || value === 'edit' || value === 'bash' || value === 'task' || value === 'database' || value === 'media' || value === 'web' || value === 'interaction' || value === 'skill';
 }
 
 function normalizeAgentConfig(value: unknown): CodingAgentConfig | undefined {

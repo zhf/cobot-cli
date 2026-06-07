@@ -8,12 +8,17 @@ export function formatToolParametersForDisplay(toolName: string, toolArgs: Recor
     read_file: ['file_path'],
     create_file: ['file_path'],
     edit_file: ['file_path'],
+    apply_patch: ['patchText'],
     delete_file: ['file_path'],
     list_files: ['directory'],
+    glob: ['pattern'],
     search_files: ['pattern'],
     execute_command: ['command'],
     create_tasks: [],
     update_tasks: [],
+    question: [],
+    skill: ['name'],
+    webfetch: ['url'],
   };
 
   const keyParams = toolParameterDisplayMappings[toolName] || [];

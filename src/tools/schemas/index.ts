@@ -132,6 +132,24 @@ export const EDIT_FILE_SCHEMA: ToolSchema = {
   },
 };
 
+export const APPLY_PATCH_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: 'apply_patch',
+    description: 'Apply a file-oriented patch. Use for multi-file edits, file creation, moves, or deletions. Patch format starts with *** Begin Patch and ends with *** End Patch, with sections like *** Add File: path, *** Update File: path, *** Delete File: path, and optional *** Move to: path.',
+    parameters: {
+      type: 'object',
+      properties: {
+        patchText: {
+          type: 'string',
+          description: 'The full patch text that describes all changes to be made',
+        },
+      },
+      required: ['patchText'],
+    },
+  },
+};
+
 export const DELETE_FILE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
@@ -299,6 +317,28 @@ export const LIST_FILES_SCHEMA: ToolSchema = {
   },
 };
 
+export const GLOB_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: 'glob',
+    description: 'Fast file pattern matching. Use to find files by name patterns such as "**/*.ts" or "src/**/*.tsx". Returns matching paths sorted alphabetically.',
+    parameters: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'The glob pattern to match files against',
+        },
+        path: {
+          type: 'string',
+          description: 'Directory to search in. Defaults to the current working directory. Omit this field for default behavior.',
+        },
+      },
+      required: ['pattern'],
+    },
+  },
+};
+
 // Task Management Tools
 
 export const CREATE_WEB_PAGE_SCHEMA: ToolSchema = {
@@ -415,6 +455,92 @@ export const UPDATE_TASKS_SCHEMA: ToolSchema = {
         },
       },
       required: ['task_updates'],
+    },
+  },
+};
+
+export const QUESTION_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: 'question',
+    description: 'Ask the user structured questions during execution. Use when you need a decision, clarification, or preference before continuing.',
+    parameters: {
+      type: 'object',
+      properties: {
+        questions: {
+          type: 'array',
+          description: 'Questions to ask',
+          items: {
+            type: 'object',
+            properties: {
+              question: { type: 'string', description: 'Complete question' },
+              header: { type: 'string', description: 'Short label for the question' },
+              options: {
+                type: 'array',
+                description: 'Available choices',
+                items: {
+                  type: 'object',
+                  properties: {
+                    label: { type: 'string', description: 'Choice label' },
+                    description: { type: 'string', description: 'Choice explanation' },
+                  },
+                  required: ['label', 'description'],
+                },
+              },
+              multiple: { type: 'boolean', description: 'Allow selecting multiple choices', default: false },
+              custom: { type: 'boolean', description: 'Allow custom typed answer', default: true },
+            },
+            required: ['question', 'header', 'options'],
+          },
+        },
+      },
+      required: ['questions'],
+    },
+  },
+};
+
+export const SKILL_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: 'skill',
+    description: 'Load a specialized skill that provides domain-specific instructions and workflows from configured Cobot skill directories.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'The name of the skill to load',
+        },
+      },
+      required: ['name'],
+    },
+  },
+};
+
+export const WEBFETCH_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: 'webfetch',
+    description: 'Fetch a URL and return content as markdown, plain text, or HTML. Use to retrieve and analyze web content.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'The URL to fetch. Must start with http:// or https://',
+        },
+        format: {
+          type: 'string',
+          enum: ['text', 'markdown', 'html'],
+          description: 'The format to return. Defaults to markdown.',
+          default: 'markdown',
+        },
+        timeout: {
+          type: 'number',
+          description: 'Optional timeout in seconds, capped at 120',
+        },
+      },
+      required: ['url'],
     },
   },
 };
@@ -620,12 +746,17 @@ export const ALL_TOOL_SCHEMAS = [
   READ_FILE_SCHEMA,
   CREATE_FILE_SCHEMA,
   EDIT_FILE_SCHEMA,
+  APPLY_PATCH_SCHEMA,
   DELETE_FILE_SCHEMA,
   SEARCH_FILES_SCHEMA,
   LIST_FILES_SCHEMA,
+  GLOB_SCHEMA,
   CREATE_WEB_PAGE_SCHEMA,
   CREATE_TASKS_SCHEMA,
   UPDATE_TASKS_SCHEMA,
+  QUESTION_SCHEMA,
+  SKILL_SCHEMA,
+  WEBFETCH_SCHEMA,
   EXECUTE_COMMAND_SCHEMA,
   CONVERT_DOCUMENT_SCHEMA,
   PROCESS_IMAGE_SCHEMA,
@@ -640,8 +771,11 @@ export const SAFE_TOOLS = [
   'read_file',
   'list_files',
   'search_files',
+  'glob',
   'create_tasks',
   'update_tasks',
+  'question',
+  'skill',
   'open_file',
 ];
 
@@ -649,7 +783,9 @@ export const SAFE_TOOLS = [
 export const APPROVAL_REQUIRED_TOOLS = [
   'create_file',
   'edit_file',
+  'apply_patch',
   'create_web_page',
+  'webfetch',
   'convert_document',
   'process_image',
   'batch_process_images',

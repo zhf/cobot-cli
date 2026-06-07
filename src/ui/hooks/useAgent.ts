@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { Agent } from '../../core/agent.js';
 import { StoredChatMessage, StoredToolExecution } from '../../core/session-store.js';
 import { getToolPermissionAction } from '../../core/coding-agents.js';
+import { QuestionAnswer, QuestionPrompt } from '../../tools/question.js';
 
 export interface ChatMessage extends Omit<StoredChatMessage, 'timestamp' | 'toolExecution'> {
   id: string;
@@ -65,6 +66,10 @@ export function useAgent(
   const [pendingError, setPendingError] = useState<{
     error: string;
     resolve:(shouldRetry: boolean) => void;
+      } | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<{
+    questions: QuestionPrompt[];
+    resolve:(answers: QuestionAnswer[]) => void;
       } | null>(null);
 
   const addMessageToHistory = useCallback((message: Omit<ChatMessage, 'id' | 'timestamp'>) => {
@@ -230,6 +235,23 @@ export function useAgent(
             });
           });
         },
+        onQuestion: async (questions: QuestionPrompt[]) => {
+          if (onPauseRequest) {
+            onPauseRequest();
+          }
+
+          return new Promise<QuestionAnswer[]>((resolve) => {
+            setPendingQuestion({
+              questions,
+              resolve: (answers: QuestionAnswer[]) => {
+                if (onResumeRequest) {
+                  onResumeRequest();
+                }
+                resolve(answers);
+              },
+            });
+          });
+        },
         onMaxIterations: async (maxIterations: number) => {
           // Pause metrics while waiting for continuation decision
           if (onPauseRequest) {
@@ -341,6 +363,13 @@ export function useAgent(
     }
   }, [pendingError]);
 
+  const respondToQuestion = useCallback((answers: QuestionAnswer[]) => {
+    if (pendingQuestion) {
+      pendingQuestion.resolve(answers);
+      setPendingQuestion(null);
+    }
+  }, [pendingQuestion]);
+
   const setApiKey = useCallback((apiKey: string) => {
     agent.setApiKey(apiKey);
   }, [agent]);
@@ -387,6 +416,7 @@ export function useAgent(
     isProcessing,
     currentToolExecution,
     pendingApproval,
+    pendingQuestion,
     pendingMaxIterations,
     pendingError,
     sessionAutoApprove: isSessionAutoApprovalEnabled,
@@ -395,6 +425,7 @@ export function useAgent(
     approveToolExecution,
     respondToMaxIterations,
     respondToError,
+    respondToQuestion,
     addMessage: addMessageToHistory,
     setApiKey,
     clearHistory,
