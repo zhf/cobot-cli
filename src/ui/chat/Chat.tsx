@@ -242,13 +242,55 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
 		}
 	}, [activeSession.id, addMessage, agent, replaceHistory, sessionStore, setSessionStatsSnapshot]);
 
+  const handleSwitchCodingAgent = useCallback((agentName: string) => {
+    agent.switchCodingAgent(agentName);
+    const nextSession = sessionStore.createSession({
+      title: `${agentName} session`,
+      model: agent.getCurrentModel(),
+      temperature: agent.getTemperature(),
+      agentMessages: agent.exportMessages(),
+      baseAgentMessages: agent.exportBaseMessages(),
+      sessionStats: createEmptySessionStats(),
+    });
+
+    replaceHistory([], []);
+    setSessionStatsSnapshot(createEmptySessionStats());
+    setActiveSession(nextSession);
+  }, [agent, replaceHistory, sessionStore, setSessionStatsSnapshot]);
+
+  const handleCycleCodingAgent = useCallback(() => {
+    const agents = agent.listCodingAgents().filter((item) => item.mode !== 'subagent');
+    if (agents.length <= 1) {
+      return;
+    }
+
+    const activeAgentName = agent.getActiveCodingAgent().name;
+    const activeIndex = agents.findIndex((item) => item.name === activeAgentName);
+    const nextAgent = agents[(activeIndex + 1) % agents.length] || agents[0];
+
+    handleSwitchCodingAgent(nextAgent.name);
+    addMessage({
+      role: 'system',
+      content: `Switched to coding agent: ${nextAgent.name}. Chat history has been cleared.`,
+    });
+  }, [addMessage, agent, handleSwitchCodingAgent]);
+
   // Handle global keyboard shortcuts
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       exitApplication();
     }
     if (key.shift && key.tab) {
-      toggleAutoApprove();
+      if (!isProcessing && !pendingApproval && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner) {
+        handleCycleCodingAgent();
+      }
+      return;
+    }
+    if (key.tab && !inputValue.trim()) {
+      if (!isProcessing && !pendingApproval && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner) {
+        toggleAutoApprove();
+      }
+      return;
     }
     if (key.escape) {
       // If waiting for error retry decision, cancel retry
@@ -304,6 +346,9 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
 					listSessions: () => sessionStore.listSessions(),
 					resumeSession: handleResumeSession,
 					deleteSession: handleDeleteSession,
+          listCodingAgents: () => agent.listCodingAgents(),
+          switchCodingAgent: handleSwitchCodingAgent,
+          activeCodingAgentName: agent.getActiveCodingAgent().name,
 					activeSessionId: activeSession.id,
           toggleReasoning,
           showReasoning,

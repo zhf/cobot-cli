@@ -6,6 +6,7 @@ import { buildPromptWithStdin } from '../cli/promptInput.js';
 import ConfigManager from '../config/ConfigManager.js';
 import { SeeyonChatClient, SeeyonChatError } from '../core/seeyon-chat.js';
 import { writeProjectContext } from '../utils/context/projectContext.js';
+import { formatCodingAgentList, loadCodingAgents, resolveCodingAgent } from '../core/coding-agents.js';
 
 interface GlobalOptions {
   temperature: number;
@@ -13,6 +14,11 @@ interface GlobalOptions {
   system?: string;
   debug?: boolean;
   prompt?: string;
+  agent?: string;
+}
+
+interface RunOptions {
+  agent?: string;
 }
 
 function getGlobalOptions(): GlobalOptions {
@@ -45,6 +51,20 @@ async function runPromptCommand(prompt: string): Promise<void> {
     options.temperature,
     options.system || null,
     options.debug,
+    options.agent || null,
+  );
+}
+
+async function runPromptCommandWithAgent(prompt: string, codingAgentName?: string): Promise<void> {
+  const options = getGlobalOptions();
+
+  await runPrompt(
+    prompt,
+    options.model,
+    options.temperature,
+    options.system || null,
+    options.debug,
+    codingAgentName || options.agent || null,
   );
 }
 
@@ -54,6 +74,7 @@ function printConfig(): void {
   console.log(`apikey: ${maskSecret(configManager.getApiKey())}`);
   console.log(`baseurl: ${configManager.getBaseURL() || 'not set'}`);
   console.log(`model: ${configManager.getDefaultModel() || 'not set'}`);
+  console.log(`defaultAgent: ${configManager.getDefaultAgent() || 'not set'}`);
   console.log(`theme: ${configManager.getTheme()}`);
   console.log(`extraRequest: ${configManager.getExtraRequestString() || 'not set'}`);
   console.log(`seeyonChatApiKey: ${maskSecret(configManager.getSeeyonChatApiKey())}`);
@@ -77,6 +98,12 @@ function setConfigValue(key: string, value: string): void {
     case 'model':
       configManager.setDefaultModel(value);
       console.log('Default model saved.');
+      break;
+    case 'defaultagent':
+    case 'default-agent':
+      resolveCodingAgent(value, null, configManager.getCodingAgents());
+      configManager.setDefaultAgent(value);
+      console.log('Default coding agent saved.');
       break;
     case 'theme':
       if (value !== 'dark' && value !== 'light') {
@@ -119,6 +146,11 @@ function clearConfigValue(key: string): void {
       configManager.clearBaseURL();
       console.log('Base URL cleared.');
       break;
+    case 'defaultagent':
+    case 'default-agent':
+      configManager.clearDefaultAgent();
+      console.log('Default coding agent cleared.');
+      break;
     case 'extrarequest':
     case 'extra-request':
       configManager.clearExtraRequest();
@@ -159,6 +191,20 @@ async function listSeeyonAgents(): Promise<void> {
   }
 }
 
+function listCodingAgents(): void {
+  const configManager = new ConfigManager();
+  const agents = loadCodingAgents(configManager.getCodingAgents());
+  const activeAgent = configManager.getDefaultAgent();
+  console.log(formatCodingAgentList(agents, activeAgent || undefined));
+}
+
+function setDefaultCodingAgent(agentName: string): void {
+  const configManager = new ConfigManager();
+  resolveCodingAgent(agentName, null, configManager.getCodingAgents());
+  configManager.setDefaultAgent(agentName);
+  console.log(`Default coding agent saved: ${agentName}`);
+}
+
 async function runSeeyonAgent(agentReference: string, prompt: string): Promise<void> {
   if (!prompt.trim()) {
     exitWithError('Provide a prompt argument or pipe input to stdin.');
@@ -188,64 +234,79 @@ const program = new Command();
 
 program
   .name('cobot')
-  .usage('[options] [agentName] [agentPrompt...]')
+  .usage('[options]')
   .description('Cobot CLI')
   .version('1.0.0')
-  .argument('[agentName]', 'Seeyon Chat agent name or chatbot id to run')
-  .argument('[agentPrompt...]', 'Prompt for the Seeyon Chat agent')
   .option('-t, --temperature <temperature>', 'Temperature for generation', parseFloat, 1.0)
   .option('-m, --model <model>', 'AI model to use for generation', 'gpt-4o-mini')
+  .option('-a, --agent <agent>', 'Coding agent to use')
   .option('-s, --system <message>', 'Custom system message')
   .option('-d, --debug', 'Enable debug logging to debug-agent.log in current directory')
   .option('-p, --prompt <prompt>', 'Run in non-interactive mode with a predefined prompt')
   .showHelpAfterError()
   .showSuggestionAfterError()
-  .action(async (agentName: string | undefined, agentPrompt: string[] | undefined, options: GlobalOptions) => {
+  .action(async (options: GlobalOptions) => {
     if (options.prompt) {
       const fullPrompt = await buildPromptWithStdin(options.prompt);
 
       await runPromptCommand(fullPrompt);
-    } else if (agentName) {
-      const prompt = await buildPromptWithStdin((agentPrompt || []).join(' '));
-
-      await runSeeyonAgent(agentName, prompt);
     } else {
       await startChat(
         options.model,
         options.temperature,
         options.system || null,
         options.debug,
+        options.agent || null,
       );
     }
   });
 
 program
   .command('agents')
-  .description('List Seeyon Chat agents accessible to the configured account')
+  .description('List configured coding agents')
+  .action(() => {
+    listCodingAgents();
+  });
+
+program
+  .command('agent [agentName]')
+  .description('Show or set the default coding agent')
+  .action((agentName: string | undefined) => {
+    if (agentName) {
+      setDefaultCodingAgent(agentName);
+    } else {
+      listCodingAgents();
+    }
+  });
+
+program
+  .command('bots')
+  .description('List Seeyon Chat bots accessible to the configured account')
   .action(async () => {
     await listSeeyonAgents();
   });
 
 program
-  .command('agent <agentName> [prompt...]')
-  .description('Run a Seeyon Chat agent by name or chatbot id in non-interactive mode')
-  .action(async (agentName: string, promptParts: string[]) => {
+  .command('bot <botName> [prompt...]')
+  .description('Run a Seeyon Chat bot by name or chatbot id in non-interactive mode')
+  .action(async (botName: string, promptParts: string[]) => {
     const prompt = await buildPromptWithStdin(promptParts.join(' '));
 
-    await runSeeyonAgent(agentName, prompt);
+    await runSeeyonAgent(botName, prompt);
   });
 
 program
   .command('run [prompt...]')
   .description('Run in non-interactive mode with a prompt')
-  .action(async (promptParts: string[]) => {
+  .option('-a, --agent <agent>', 'Coding agent to use')
+  .action(async (promptParts: string[], commandOptions: RunOptions) => {
     const prompt = await buildPromptWithStdin(promptParts.join(' '));
 
     if (!prompt.trim()) {
       exitWithError('Provide a prompt argument or pipe input to stdin.');
     }
 
-    await runPromptCommand(prompt);
+    await runPromptCommandWithAgent(prompt, commandOptions.agent);
   });
 
 program

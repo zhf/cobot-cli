@@ -1,10 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import type { CodingAgentConfig } from '../core/coding-agents.js';
 
 interface Config {
   openaiApiKey?: string;
   defaultModel?: string;
+  defaultAgent?: string;
+  default_agent?: string;
+  agent?: Record<string, CodingAgentConfig>;
+  agents?: Record<string, CodingAgentConfig>;
   openaiBaseURL?: string;
   theme?: 'dark' | 'light';
   extraRequest?: string;
@@ -37,6 +42,10 @@ function expandConfig(config: Config): Config {
 
   if (config.openaiApiKey) expandedConfig.openaiApiKey = expandEnvironmentVariables(config.openaiApiKey);
   if (config.defaultModel) expandedConfig.defaultModel = expandEnvironmentVariables(config.defaultModel);
+  if (config.defaultAgent) expandedConfig.defaultAgent = expandEnvironmentVariables(config.defaultAgent);
+  if (config.default_agent) expandedConfig.default_agent = expandEnvironmentVariables(config.default_agent);
+  if (config.agent) expandedConfig.agent = config.agent;
+  if (config.agents) expandedConfig.agents = config.agents;
   if (config.openaiBaseURL) expandedConfig.openaiBaseURL = expandEnvironmentVariables(config.openaiBaseURL);
   if (config.extraRequest) expandedConfig.extraRequest = expandEnvironmentVariables(config.extraRequest);
   if (config.seeyonChatApiKey) expandedConfig.seeyonChatApiKey = expandEnvironmentVariables(config.seeyonChatApiKey);
@@ -86,6 +95,9 @@ class ConfigManager {
     // Start with file config (highest priority)
     if (fileConfig.openaiApiKey) mergedConfig.openaiApiKey = fileConfig.openaiApiKey;
     if (fileConfig.defaultModel) mergedConfig.defaultModel = fileConfig.defaultModel;
+    if (fileConfig.defaultAgent || fileConfig.default_agent) mergedConfig.defaultAgent = fileConfig.defaultAgent || fileConfig.default_agent;
+    if (fileConfig.agent) mergedConfig.agent = fileConfig.agent;
+    if (fileConfig.agents) mergedConfig.agents = fileConfig.agents;
     if (fileConfig.openaiBaseURL) mergedConfig.openaiBaseURL = fileConfig.openaiBaseURL;
     if (fileConfig.theme) mergedConfig.theme = fileConfig.theme;
     if (fileConfig.extraRequest) mergedConfig.extraRequest = fileConfig.extraRequest;
@@ -98,6 +110,9 @@ class ConfigManager {
     }
     if (!mergedConfig.defaultModel && process.env.COBOT_DEFAULT_MODEL) {
       mergedConfig.defaultModel = process.env.COBOT_DEFAULT_MODEL;
+    }
+    if (!mergedConfig.defaultAgent && process.env.COBOT_DEFAULT_AGENT) {
+      mergedConfig.defaultAgent = process.env.COBOT_DEFAULT_AGENT;
     }
     if (!mergedConfig.openaiBaseURL && process.env.COBOT_OPENAI_BASE_URL) {
       mergedConfig.openaiBaseURL = process.env.COBOT_OPENAI_BASE_URL;
@@ -190,6 +205,47 @@ class ConfigManager {
     } catch (error) {
       throw new Error(`Failed to save default model: ${error}`);
     }
+  }
+
+  public getDefaultAgent(): string | null {
+    const config = this.getConfig();
+    return config.defaultAgent || null;
+  }
+
+  public setDefaultAgent(agentName: string): void {
+    try {
+      const config = this.readConfigFromFile();
+      config.defaultAgent = agentName;
+      this.writeConfigToFile(config);
+    } catch (error) {
+      throw new Error(`Failed to save default agent: ${error}`);
+    }
+  }
+
+  public clearDefaultAgent(): void {
+    try {
+      const config = this.readConfigFromFile();
+      delete config.defaultAgent;
+      delete config.default_agent;
+
+      if (Object.keys(config).length === 0) {
+        if (fs.existsSync(this.configPath)) {
+          fs.unlinkSync(this.configPath);
+        }
+      } else {
+        this.writeConfigToFile(config);
+      }
+    } catch (error) {
+      console.warn('Failed to clear default agent:', error);
+    }
+  }
+
+  public getCodingAgents(): Record<string, CodingAgentConfig> {
+    const config = this.getConfig();
+    return {
+      ...(config.agent || {}),
+      ...(config.agents || {}),
+    };
   }
 
   public getBaseURL(): string | null {

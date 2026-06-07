@@ -23,6 +23,7 @@ async function renderChatSession(
     initialSession.temperature,
     null,
     debug,
+    null,
   );
 
   agent.loadSessionState(
@@ -51,6 +52,7 @@ export async function startChat(
   temperature: number,
   system: string | null,
   debug?: boolean,
+  codingAgentName?: string | null,
 ): Promise<void> {
 //   console.log(chalk.hex('#3f8097')(`
 //   ▄▖  ▌   ▗ 
@@ -61,7 +63,7 @@ export async function startChat(
 
   try {
     // Create agent (API key will be checked on first message)
-    const agent = await Agent.create(model, temperature, system, debug);
+    const agent = await Agent.create(model, temperature, system, debug, codingAgentName);
     const sessionStore = new SessionStore();
     const initialSession = sessionStore.createSession({
       model: agent.getCurrentModel(),

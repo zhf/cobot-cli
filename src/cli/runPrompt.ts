@@ -19,10 +19,11 @@ export async function runPrompt(
   temperature: number,
   system: string | null,
   debug?: boolean,
+  codingAgentName?: string | null,
 ): Promise<void> {
   try {
     // Create agent (API key will be checked on first message)
-    const agent = await Agent.create(model, temperature, system, debug);
+    const agent = await Agent.create(model, temperature, system, debug, codingAgentName);
 
     // Set up simple callbacks to handle the agent's responses
     agent.setToolCallbacks({

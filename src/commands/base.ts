@@ -1,4 +1,5 @@
 import type { SessionListItem } from '../core/session-store.js';
+import type { CodingAgentInfo } from '../core/coding-agents.js';
 
 export interface CommandContext {
   addMessage: (message: unknown) => void;
@@ -12,6 +13,9 @@ export interface CommandContext {
   listSessions?: () => SessionListItem[];
   resumeSession?: (reference?: string) => void;
   deleteSession?: (reference: string) => void;
+  listCodingAgents?: () => CodingAgentInfo[];
+  switchCodingAgent?: (agentName: string) => void;
+  activeCodingAgentName?: string;
   activeSessionId?: string;
   toggleReasoning?: () => void;
   showReasoning?: boolean;

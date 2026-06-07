@@ -1,8 +1,8 @@
 import { ToolCall } from './messages.js';
 import { ToolResult } from '../tools/registry.js';
 import { hasFileBeenReadBeforeEdit, getReadBeforeEditErrorMessage } from '../tools/validators.js';
-import { DANGEROUS_TOOLS, APPROVAL_REQUIRED_TOOLS } from '../tools/schemas/index.js';
 import { executeTool } from '../tools/registry.js';
+import { CodingAgentInfo, getToolPermissionAction } from './coding-agents.js';
 
 export interface ToolExecutorCallbacks {
   onToolStart?: (name: string, args: Record<string, unknown>) => void;
@@ -16,6 +16,7 @@ export interface ToolExecutorCallbacks {
 export interface ToolExecutorOptions {
   sessionAutoApprove: boolean;
   isInterrupted: boolean;
+  codingAgent: CodingAgentInfo;
 }
 
 export async function executeToolCall(
@@ -60,14 +61,20 @@ export async function executeToolCall(
     }
 
     // Check if tool needs approval (only after validation passes)
-    const isDangerous = DANGEROUS_TOOLS.includes(toolName);
-    const requiresApproval = APPROVAL_REQUIRED_TOOLS.includes(toolName);
-    const needsApproval = isDangerous || requiresApproval;
+    const permissionAction = getToolPermissionAction(toolName, options.codingAgent);
+    if (permissionAction === 'deny') {
+      const result = { error: `Tool ${toolName} is denied by active agent ${options.codingAgent.name}`, success: false };
+      if (callbacks.onToolEnd) {
+        callbacks.onToolEnd(toolName, result);
+      }
+      return result;
+    }
 
-    // For APPROVAL_REQUIRED_TOOLS, check if session auto-approval is enabled
-    const canAutoApprove = requiresApproval && !isDangerous && options.sessionAutoApprove;
+    const requiresApproval = permissionAction === 'ask';
 
-    if (needsApproval && !canAutoApprove) {
+    const canAutoApprove = requiresApproval && options.sessionAutoApprove;
+
+    if (requiresApproval && !canAutoApprove) {
       let approvalResult: { approved: boolean; autoApproveSession?: boolean };
 
       if (callbacks.onToolApproval) {
@@ -95,8 +102,8 @@ export async function executeToolCall(
         approvalResult = { approved: false };
       }
 
-      // Enable session auto-approval if requested (only for APPROVAL_REQUIRED_TOOLS)
-      if (approvalResult.autoApproveSession && requiresApproval && !isDangerous) {
+      // Enable session auto-approval if requested.
+      if (approvalResult.autoApproveSession && requiresApproval) {
         options.sessionAutoApprove = true;
       }
 

@@ -130,6 +130,11 @@ export default function MessageInput({
       return;
     }
 
+    if (key.tab) {
+      // Tab is reserved for global shortcuts.
+      return;
+    }
+
     // Regular character input
     if (input && !key.meta && !key.ctrl) {
       const processedInput = input.replace(/[\r\n]+/g, ' ');

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Agent } from '../../core/agent.js';
 import { StoredChatMessage, StoredToolExecution } from '../../core/session-store.js';
-import { DANGEROUS_TOOLS, APPROVAL_REQUIRED_TOOLS } from '../../tools/schemas/index.js';
+import { getToolPermissionAction } from '../../core/coding-agents.js';
 
 export interface ChatMessage extends Omit<StoredChatMessage, 'timestamp' | 'toolExecution'> {
   id: string;
@@ -130,12 +130,13 @@ export function useAgent(
           });
         },
         onToolStart: (name: string, args: Record<string, any>) => {
+          const permissionAction = getToolPermissionAction(name, agent.getActiveCodingAgent());
           const toolExecution: ToolExecution = {
             id: Math.random().toString(36).substr(2, 9),
             name,
             args,
             status: 'pending',
-            needsApproval: DANGEROUS_TOOLS.includes(name) || APPROVAL_REQUIRED_TOOLS.includes(name),
+            needsApproval: permissionAction === 'ask',
           };
 
           // Store the ID in ref for reliable matching across callbacks

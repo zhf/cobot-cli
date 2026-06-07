@@ -10,6 +10,12 @@ import { Message, ToolCall, ApiError } from './messages.js';
 import { debugLog, setDebugLoggingEnabled } from './logger.js';
 import { buildChatCompletionPayload, createStreamingChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
+import {
+  CodingAgentInfo,
+  filterToolSchemasForAgent,
+  loadCodingAgents,
+  resolveCodingAgent,
+} from './coding-agents.js';
 
 
 
@@ -31,6 +37,8 @@ export class Agent {
   private sessionAutoApprove: boolean = false;
 
   private systemMessage: string;
+
+  private codingAgent: CodingAgentInfo;
 
   private configManager: ConfigManager;
 
@@ -72,52 +80,29 @@ export class Agent {
     model: string,
     temperature: number,
     systemMessage: string | null,
+    codingAgent: CodingAgentInfo,
     debug?: boolean,
   ) {
     this.model = model;
     this.temperature = temperature;
+    this.codingAgent = codingAgent;
     this.configManager = new ConfigManager();
 
     // Set debug mode
-    const isDebugEnabled = debug || false;
-    setDebugLoggingEnabled(isDebugEnabled);
+    setDebugLoggingEnabled(debug || false);
 
     // Build system message
     if (systemMessage) {
       this.systemMessage = systemMessage;
+    } else if (codingAgent.prompt) {
+      this.systemMessage = this.buildAgentSystemMessage(codingAgent.prompt);
     } else {
       this.systemMessage = this.buildDefaultSystemMessage();
     }
 
     // Add system message to conversation
     this.messages.push({ role: 'system', content: this.systemMessage });
-
-    // Load project context if available
-    try {
-      const customContextFilePath = process.env.OPENAI_CONTEXT_FILE;
-      const baseDir = process.env.OPENAI_CONTEXT_DIR || process.cwd();
-      const contextPath = customContextFilePath || path.join(baseDir, '.cobot', 'context.md');
-      const contextLimit = parseInt(process.env.OPENAI_CONTEXT_LIMIT || '20000', 10);
-      if (fs.existsSync(contextPath)) {
-        const contextContent = fs.readFileSync(contextPath, 'utf-8');
-        const trimmedContext = contextContent.length > contextLimit
-          ? `${contextContent.slice(0, contextLimit)}\n... [truncated]`
-          : contextContent;
-        const contextSource = customContextFilePath ? contextPath : '.cobot/context.md';
-        this.messages.push({
-          role: 'system',
-          content: [
-            `Project context loaded from ${contextSource}. Use this as high-level reference when reasoning about the repository.`,
-            '',
-            trimmedContext,
-          ].join('\n'),
-        });
-      }
-    } catch (error) {
-      if (isDebugEnabled) {
-        debugLog('Failed to load project context:', error);
-      }
-    }
+    this.loadProjectContextMessages();
 
     this.baseMessages = cloneMessages(this.messages);
   }
@@ -127,16 +112,20 @@ export class Agent {
     temperature: number,
     systemMessage: string | null,
     debug?: boolean,
+    codingAgentName?: string | null,
   ): Promise<Agent> {
     // Check for default model in config if model not explicitly provided
     const configManager = new ConfigManager();
+    const codingAgent = resolveCodingAgent(codingAgentName, configManager.getDefaultAgent(), configManager.getCodingAgents());
     const defaultModel = configManager.getDefaultModel();
-    const selectedModel = defaultModel || model;
+    const selectedModel = codingAgent.model || defaultModel || model;
+    const selectedTemperature = codingAgent.temperature ?? temperature;
 
     const agent = new Agent(
       selectedModel,
-      temperature,
+      selectedTemperature,
       systemMessage,
+      codingAgent,
       debug,
     );
 
@@ -194,6 +183,40 @@ Creating Files:
 
 Never generate markdown tables. Be brief and efficient.
 `;
+  }
+
+  private buildAgentSystemMessage(prompt: string): string {
+    const cwd = process.cwd();
+    return `${prompt.trim()}
+
+Current working directory: ${cwd}
+`;
+  }
+
+  private loadProjectContextMessages(): void {
+    try {
+      const customContextFilePath = process.env.OPENAI_CONTEXT_FILE;
+      const baseDir = process.env.OPENAI_CONTEXT_DIR || process.cwd();
+      const contextPath = customContextFilePath || path.join(baseDir, '.cobot', 'context.md');
+      const contextLimit = parseInt(process.env.OPENAI_CONTEXT_LIMIT || '20000', 10);
+      if (fs.existsSync(contextPath)) {
+        const contextContent = fs.readFileSync(contextPath, 'utf-8');
+        const trimmedContext = contextContent.length > contextLimit
+          ? `${contextContent.slice(0, contextLimit)}\n... [truncated]`
+          : contextContent;
+        const contextSource = customContextFilePath ? contextPath : '.cobot/context.md';
+        this.messages.push({
+          role: 'system',
+          content: [
+            `Project context loaded from ${contextSource}. Use this as high-level reference when reasoning about the repository.`,
+            '',
+            trimmedContext,
+          ].join('\n'),
+        });
+      }
+    } catch (error) {
+      debugLog('Failed to load project context:', error);
+    }
   }
 
   public setToolCallbacks(callbacks: {
@@ -408,6 +431,33 @@ Never generate markdown tables. Be brief and efficient.
     this.updateDefaultSystemMessageForModel();
   }
 
+  public getActiveCodingAgent(): CodingAgentInfo {
+    return this.codingAgent;
+  }
+
+  public listCodingAgents(): CodingAgentInfo[] {
+    return loadCodingAgents(this.configManager.getCodingAgents());
+  }
+
+  public switchCodingAgent(agentName: string): void {
+    const nextAgent = resolveCodingAgent(agentName, this.configManager.getDefaultAgent(), this.configManager.getCodingAgents());
+    this.codingAgent = nextAgent;
+
+    if (nextAgent.model) {
+      this.model = nextAgent.model;
+    }
+    if (nextAgent.temperature !== undefined) {
+      this.temperature = nextAgent.temperature;
+    }
+
+    this.systemMessage = nextAgent.prompt
+      ? this.buildAgentSystemMessage(nextAgent.prompt)
+      : this.buildDefaultSystemMessage();
+    this.messages = [{ role: 'system', content: this.systemMessage }];
+    this.loadProjectContextMessages();
+    this.baseMessages = cloneMessages(this.messages);
+  }
+
   public getTemperature(): number {
     return this.temperature;
   }
@@ -549,7 +599,7 @@ Never generate markdown tables. Be brief and efficient.
             messages: this.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
             temperature: this.temperature,
             max_tokens: 8000,
-            tools: ALL_TOOL_SCHEMAS,
+            tools: filterToolSchemasForAgent(ALL_TOOL_SCHEMAS, this.codingAgent),
             tool_choice: 'auto',
             stream: true,
             stream_options: { include_usage: true },
@@ -646,6 +696,7 @@ Never generate markdown tables. Be brief and efficient.
               const options: ToolExecutorOptions = {
                 sessionAutoApprove: this.sessionAutoApprove,
                 isInterrupted: this.isInterrupted,
+                codingAgent: this.codingAgent,
               };
               
               const result = await executeToolCall(toolCall, callbacks, options);

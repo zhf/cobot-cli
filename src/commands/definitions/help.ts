@@ -21,7 +21,8 @@ Navigation:
 
 Keyboard Shortcuts:
 - Esc: Clear the input box, interrupt processing, or reject tool approval.
-- Shift+Tab: Toggle auto-approval for editing tools.
+- Tab on empty input: Toggle approval mode.
+- Shift+Tab: Cycle coding agents.
 - Ctrl+C: Exit the application.
 
 This is a highly customizable, lightweight, and open-source coding CLI powered by OpenAI. You can ask for help with coding tasks or everyday office challenges.`,

@@ -14,6 +14,8 @@ import newCommand from './definitions/new.js';
 import sessionsCommand from './definitions/sessions.js';
 import resumeCommand from './definitions/resume.js';
 import deleteSessionCommand from './definitions/delete-session.js';
+import agentCommand from './definitions/agent.js';
+import agentsCommand from './definitions/agents.js';
 
 const availableCommands: CommandDefinition[] = [
   helpCommand,
@@ -31,6 +33,8 @@ const availableCommands: CommandDefinition[] = [
   sessionsCommand,
   resumeCommand,
   deleteSessionCommand,
+  agentCommand,
+  agentsCommand,
 ];
 
 export function getAvailableCommands(): CommandDefinition[] {
