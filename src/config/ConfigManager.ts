@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { CodingAgentConfig } from '../core/coding-agents.js';
+import type { SkillConfig } from '../core/skills.js';
 
 interface Config {
   openaiApiKey?: string;
@@ -10,6 +11,7 @@ interface Config {
   default_agent?: string;
   agent?: Record<string, CodingAgentConfig>;
   agents?: Record<string, CodingAgentConfig>;
+  skills?: SkillConfig;
   openaiBaseURL?: string;
   theme?: 'dark' | 'light';
   extraRequest?: string;
@@ -46,6 +48,7 @@ function expandConfig(config: Config): Config {
   if (config.default_agent) expandedConfig.default_agent = expandEnvironmentVariables(config.default_agent);
   if (config.agent) expandedConfig.agent = config.agent;
   if (config.agents) expandedConfig.agents = config.agents;
+  if (config.skills) expandedConfig.skills = config.skills;
   if (config.openaiBaseURL) expandedConfig.openaiBaseURL = expandEnvironmentVariables(config.openaiBaseURL);
   if (config.extraRequest) expandedConfig.extraRequest = expandEnvironmentVariables(config.extraRequest);
   if (config.seeyonChatApiKey) expandedConfig.seeyonChatApiKey = expandEnvironmentVariables(config.seeyonChatApiKey);
@@ -98,6 +101,7 @@ class ConfigManager {
     if (fileConfig.defaultAgent || fileConfig.default_agent) mergedConfig.defaultAgent = fileConfig.defaultAgent || fileConfig.default_agent;
     if (fileConfig.agent) mergedConfig.agent = fileConfig.agent;
     if (fileConfig.agents) mergedConfig.agents = fileConfig.agents;
+    if (fileConfig.skills) mergedConfig.skills = fileConfig.skills;
     if (fileConfig.openaiBaseURL) mergedConfig.openaiBaseURL = fileConfig.openaiBaseURL;
     if (fileConfig.theme) mergedConfig.theme = fileConfig.theme;
     if (fileConfig.extraRequest) mergedConfig.extraRequest = fileConfig.extraRequest;
@@ -246,6 +250,11 @@ class ConfigManager {
       ...(config.agent || {}),
       ...(config.agents || {}),
     };
+  }
+
+  public getSkillsConfig(): SkillConfig {
+    const config = this.getConfig();
+    return config.skills || {};
   }
 
   public getBaseURL(): string | null {

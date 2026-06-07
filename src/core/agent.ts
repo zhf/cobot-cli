@@ -11,7 +11,7 @@ import { debugLog, setDebugLoggingEnabled } from './logger.js';
 import { buildChatCompletionPayload, createStreamingChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
 import { QuestionAnswer, QuestionPrompt } from '../tools/question.js';
-import { skillDescriptionSuffix } from '../tools/skill.js';
+import { skillDescriptionSuffix, skillSystemPrompt } from './skills.js';
 import {
   CodingAgentInfo,
   getToolPermissionAction,
@@ -152,9 +152,11 @@ export class Agent {
 
   private buildDefaultSystemMessage(): string {
     const cwd = process.cwd();
+    const skills = skillSystemPrompt(this.configManager.getSkillsConfig());
     return `You are a coding and everyday office work assistant powered by ${this.model}. You have access to various tools for coding tasks. Always use these tools for any implementation requests—never reply with text-only responses or code snippets when the task requires actual files.
 
 Current working directory: ${cwd}
+${skills ? `\n${skills}\n` : ''}
 
 For tasks like building, creating, or implementing:
 - Start with create_file or list_files—don't give explanations first.
@@ -193,9 +195,11 @@ Never generate markdown tables. Be brief and efficient.
 
   private buildAgentSystemMessage(prompt: string): string {
     const cwd = process.cwd();
+    const skills = skillSystemPrompt(this.configManager.getSkillsConfig());
     return `${prompt.trim()}
 
 Current working directory: ${cwd}
+${skills ? `\n${skills}\n` : ''}
 `;
   }
 
@@ -363,7 +367,7 @@ Current working directory: ${cwd}
         ...toolSchema,
         function: {
           ...toolSchema.function,
-          description: `${toolSchema.function.description}\n\n${skillDescriptionSuffix()}`,
+          description: `${toolSchema.function.description}\n\n${skillDescriptionSuffix(this.configManager.getSkillsConfig())}`,
         },
       };
     });

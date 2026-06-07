@@ -86,6 +86,7 @@ function printConfig(): void {
   console.log(`model: ${configManager.getDefaultModel() || 'not set'}`);
   console.log(`defaultAgent: ${configManager.getDefaultAgent() || 'not set'}`);
   console.log(`theme: ${configManager.getTheme()}`);
+  console.log(`skills.paths: ${configManager.getSkillsConfig().paths?.join(', ') || 'not set'}`);
   console.log(`extraRequest: ${configManager.getExtraRequestString() || 'not set'}`);
   console.log(`seeyonChatApiKey: ${maskSecret(configManager.getSeeyonChatApiKey())}`);
   console.log(`seeyonChatEndpoint: ${configManager.getSeeyonChatEndpoint()}`);
