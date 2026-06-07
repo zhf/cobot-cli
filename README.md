@@ -19,6 +19,8 @@ The assistant is powered by OpenAI's advanced models and comes with a built-in t
 
 ## Installation
 
+Cobot CLI requires Bun 1.2.22 or newer.
+
 ### Run Instantly (Recommended)
 ```bash
 bunx cobot-cli@latest
@@ -60,6 +62,12 @@ Run a one-off non-interactive prompt:
 cobot run "summarize this project"
 ```
 
+Resume the latest saved interactive session:
+```bash
+cobot resume
+cobot resume a1b2c3d4
+```
+
 Run a Seeyon Chat agent by name:
 ```bash
 cobot agents
@@ -88,6 +96,7 @@ Commands:
   agents                      List Seeyon Chat agents accessible to the configured account
   agent <agentName> [prompt...] Run a Seeyon Chat agent by name or chatbot id in non-interactive mode
   run [prompt...]             Run in non-interactive mode with a prompt
+  resume [sessionRef]         Resume the latest saved chat session, or one by id/prefix
   init                        Generate project context files in .cobot/
   config                      Manage stored Cobot configuration
 
@@ -216,6 +225,10 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 - `/help` - Show help and available commands
 - `/login` - Login with your Cobot account (feature not implemented yet)
 - `/clear` - Clear chat history and context
+- `/new [title]` - Start a fresh saved chat session
+- `/sessions` - List saved chat sessions
+- `/resume [id-or-prefix]` - Resume a saved chat session, or the previous session if no id is provided
+- `/delete-session <id-or-prefix>` - Delete a saved chat session
 - `/reasoning` - Toggle display of reasoning content in messages
 - `/stats` - Display session statistics and token usage
 - `/theme` - Toggle between light and dark themes (preference is automatically saved)
@@ -285,9 +298,15 @@ You can specify the model to use either through the `/model` command during chat
 - Command execution safety limits (no long-running processes)
 - Secure storage of API keys with restrictive file permissions
 
+### Session Storage
+
+Interactive chat sessions are stored locally in `~/.cobot/sessions.sqlite` using Bun SQLite. Starting `cobot` always creates a fresh session by default. Use `cobot resume` to open the latest saved session, `cobot resume <id-or-prefix>` to open a specific saved session, or `/resume` from inside chat to continue the most recent previous session.
+
+Saved sessions include the assistant context, visible transcript, input history, model, temperature, and token statistics. The first user message automatically becomes the session title unless you provide one with `/new [title]`.
+
 ### Configuration Storage
 
-All preferences are stored in `~/.cobot/config.json` with secure file permissions (`0o600`):
+Preferences are stored in `~/.cobot/config.json` with secure file permissions (`0o600`):
 
 ```json
 {
@@ -312,7 +331,6 @@ This repository is Bun-first and uses a root Bun workspace. The CLI package rema
 
 Requirements:
 - Bun 1.2.22 or newer
-- Node.js 16 or newer for the published CLI runtime
 
 ### Project Structure
 
@@ -331,11 +349,15 @@ cobot-cli/
 │   │   │   ├── apikey.ts       # API key configuration command
 │   │   │   ├── baseurl.ts      # Base URL configuration command
 │   │   │   ├── clear.ts        # Clear chat history command
+│   │   │   ├── delete-session.ts # Delete saved session command
 │   │   │   ├── help.ts         # Help command
 │   │   │   ├── init.ts         # Project context initialization command
 │   │   │   ├── login.ts        # Authentication command
 │   │   │   ├── model.ts        # Model selection command
+│   │   │   ├── new.ts          # New saved session command
 │   │   │   ├── reasoning.ts    # Reasoning toggle command
+│   │   │   ├── resume.ts       # Resume saved session command
+│   │   │   ├── sessions.ts     # List saved sessions command
 │   │   │   ├── stats.ts        # Statistics command
 │   │   │   └── theme.ts        # Theme toggle command
 │   │   ├── base.ts             # Base command interface
@@ -345,6 +367,7 @@ cobot-cli/
 │   │   ├── logger.ts           # Debug logging
 │   │   ├── messages.ts         # Message and API error types
 │   │   ├── openai-helper.ts    # OpenAI-compatible API helper
+│   │   ├── session-store.ts    # SQLite session persistence
 │   │   └── tool-executor.ts    # Tool execution orchestration
 │   ├── config/
 │   │   └── ConfigManager.ts    # Configuration management

@@ -18,6 +18,8 @@ export class Agent {
 
   private messages: Message[] = [];
 
+  private baseMessages: Message[] = [];
+
   private apiKey: string | null = null;
 
   private model: string;
@@ -112,6 +114,8 @@ export class Agent {
         debugLog('Failed to load project context:', error);
       }
     }
+
+    this.baseMessages = cloneMessages(this.messages);
   }
 
   static async create(
@@ -275,8 +279,7 @@ Never generate markdown tables. Be brief and efficient.
   }
 
   public clearHistory(): void {
-    // Reset messages to only contain system messages
-    this.messages = this.messages.filter((msg) => msg.role === 'system');
+    this.messages = cloneMessages(this.baseMessages);
   }
 
   public addContextMessage(content: string): void {
@@ -287,10 +290,58 @@ Never generate markdown tables. Be brief and efficient.
     this.model = model;
     // Save as default model
     this.configManager.setDefaultModel(model);
+    this.updateDefaultSystemMessageForModel();
+  }
+
+  public setRuntimeModel(model: string, temperature = this.temperature): void {
+    this.model = model;
+    this.temperature = temperature;
+    this.updateDefaultSystemMessageForModel();
+  }
+
+  public getTemperature(): number {
+    return this.temperature;
+  }
+
+  public exportMessages(): Message[] {
+    return cloneMessages(this.messages);
+  }
+
+  public exportBaseMessages(): Message[] {
+    return cloneMessages(this.baseMessages);
+  }
+
+  public loadSessionState(
+    model: string,
+    temperature: number,
+    messages: Message[],
+    baseMessages: Message[],
+  ): void {
+    this.model = model;
+    this.temperature = temperature;
+    this.baseMessages = baseMessages.length > 0
+      ? cloneMessages(baseMessages)
+      : cloneMessages(messages.filter((msg) => msg.role === 'system'));
+    this.messages = messages.length > 0
+      ? cloneMessages(messages)
+      : cloneMessages(this.baseMessages);
+
+    const firstSystemMessage = this.baseMessages.find((msg) => msg.role === 'system');
+    if (firstSystemMessage) {
+      this.systemMessage = firstSystemMessage.content;
+    }
+  }
+
+  private updateDefaultSystemMessageForModel(): void {
     // Update system message to reflect new model
     const newSystemMessage = this.buildDefaultSystemMessage();
     this.systemMessage = newSystemMessage;
-    // Update the system message in the conversation
+
+    const baseSystemMsgIndex = this.baseMessages.findIndex((msg) => msg.role === 'system' && msg.content.includes('coding assistant'));
+    if (baseSystemMsgIndex >= 0) {
+      this.baseMessages[baseSystemMsgIndex].content = newSystemMessage;
+    }
+
     const systemMsgIndex = this.messages.findIndex((msg) => msg.role === 'system' && msg.content.includes('coding assistant'));
     if (systemMsgIndex >= 0) {
       this.messages[systemMsgIndex].content = newSystemMessage;
@@ -636,4 +687,8 @@ Never generate markdown tables. Be brief and efficient.
 function generateDebugCurlCommand(apiKey: string, apiRequestPayload: Record<string, unknown>, requestCount: number): string {
   // Debug logging is handled in logger.ts
   return '';
+}
+
+function cloneMessages(messages: Message[]): Message[] {
+  return JSON.parse(JSON.stringify(messages)) as Message[];
 }

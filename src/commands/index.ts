@@ -10,6 +10,10 @@ import baseurlCommand from './definitions/baseurl.js';
 import apikeyCommand from './definitions/apikey.js';
 import themeCommand from './definitions/theme.js';
 import cobotCommand from './definitions/cobot.js';
+import newCommand from './definitions/new.js';
+import sessionsCommand from './definitions/sessions.js';
+import resumeCommand from './definitions/resume.js';
+import deleteSessionCommand from './definitions/delete-session.js';
 
 const availableCommands: CommandDefinition[] = [
   helpCommand,
@@ -23,6 +27,10 @@ const availableCommands: CommandDefinition[] = [
   apikeyCommand,
   themeCommand,
   cobotCommand,
+  newCommand,
+  sessionsCommand,
+  resumeCommand,
+  deleteSessionCommand,
 ];
 
 export function getAvailableCommands(): CommandDefinition[] {
@@ -43,6 +51,7 @@ export function handleSlashCommand(
   const cmd = spaceIndex > -1
     ? fullCommand.substring(0, spaceIndex).toLowerCase()
     : fullCommand.toLowerCase();
+  const commandArgs = spaceIndex > -1 ? fullCommand.slice(spaceIndex + 1).trim() : '';
 
   const commandDef = getAvailableCommands().find((c) => c.command === cmd);
 
@@ -53,7 +62,10 @@ export function handleSlashCommand(
   });
 
   if (commandDef) {
-    commandDef.handler(context);
+    commandDef.handler({
+      ...context,
+      commandArgs,
+    });
   }
 }
 

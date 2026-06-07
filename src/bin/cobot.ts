@@ -1,6 +1,6 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { Command } from 'commander';
-import { startChat } from '../cli/startChat.js';
+import { resumeChat, startChat } from '../cli/startChat.js';
 import { runPrompt } from '../cli/runPrompt.js';
 import { buildPromptWithStdin } from '../cli/promptInput.js';
 import ConfigManager from '../config/ConfigManager.js';
@@ -246,6 +246,15 @@ program
     }
 
     await runPromptCommand(prompt);
+  });
+
+program
+  .command('resume [sessionRef]')
+  .description('Resume the latest saved chat session, or a specific session by id/prefix')
+  .action(async (sessionRef: string | undefined) => {
+    const options = getGlobalOptions();
+
+    await resumeChat(sessionRef, options.debug);
   });
 
 program

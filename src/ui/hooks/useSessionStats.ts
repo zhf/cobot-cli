@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { createEmptySessionStats, SessionStatsSnapshot } from '../../core/session-store.js';
 
 interface ApiUsage {
   prompt_tokens: number;
@@ -7,22 +8,8 @@ interface ApiUsage {
   total_time?: number;
 }
 
-interface SessionStats {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  totalRequests: number;
-  totalTime: number;
-}
-
-function useSessionStats() {
-  const [sessionStats, setSessionStats] = useState<SessionStats>({
-    promptTokens: 0,
-    completionTokens: 0,
-    totalTokens: 0,
-    totalRequests: 0,
-    totalTime: 0,
-  });
+function useSessionStats(initialStats: SessionStatsSnapshot = createEmptySessionStats()) {
+  const [sessionStats, setSessionStats] = useState<SessionStatsSnapshot>(initialStats);
 
   // Add tokens from an API response to the cumulative session totals
   const addSessionTokens = useCallback((usage: ApiUsage) => {
@@ -37,19 +24,18 @@ function useSessionStats() {
 
   // Clear session stats (called when chat history is cleared)
   const clearSessionStats = useCallback(() => {
-    setSessionStats({
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0,
-      totalRequests: 0,
-      totalTime: 0,
-    });
+    setSessionStats(createEmptySessionStats());
+  }, []);
+
+  const setSessionStatsSnapshot = useCallback((nextStats: SessionStatsSnapshot) => {
+    setSessionStats(nextStats);
   }, []);
 
   return {
     sessionStats,
     addSessionTokens,
     clearSessionStats,
+    setSessionStatsSnapshot,
   };
 }
 

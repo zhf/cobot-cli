@@ -1,9 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Text, useInput, useApp,
 } from 'ink';
 import { Agent } from '../../core/agent.js';
-import { useAgent } from '../hooks/useAgent.js';
+import {
+  createEmptySessionStats,
+  SessionRecord,
+  SessionStore,
+  shortSessionId,
+  StoredChatMessage,
+} from '../../core/session-store.js';
+import { debugLog } from '../../core/logger.js';
+import { ChatMessage, useAgent } from '../hooks/useAgent.js';
 import useTokenMetrics from '../hooks/useTokenMetrics.js';
 import useSessionStats from '../hooks/useSessionStats.js';
 import { ThemeProvider, useTheme } from '../hooks/useTheme.js';
@@ -22,10 +30,35 @@ import { handleSlashCommand } from '../../commands/index.js';
 
 interface ChatProps {
   agent: Agent;
+  sessionStore: SessionStore;
+  initialSession: SessionRecord;
 }
 
-function ChatContent({ agent }: ChatProps) {
+function deserializeChatMessages(messages: StoredChatMessage[]): ChatMessage[] {
+  return messages.map((message) => {
+    const timestamp = new Date(message.timestamp);
+
+    return {
+      ...message,
+      timestamp: Number.isNaN(timestamp.getTime()) ? new Date() : timestamp,
+    };
+  });
+}
+
+function serializeChatMessages(messages: ChatMessage[]): StoredChatMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    timestamp: message.timestamp.toISOString(),
+  }));
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
   const { colors, isDarkTheme, toggleTheme } = useTheme();
+  const [activeSession, setActiveSession] = useState<SessionRecord>(initialSession);
   const {
     completionTokens: currentCompletionTokens,
     startTime,
@@ -45,7 +78,8 @@ function ChatContent({ agent }: ChatProps) {
     sessionStats,
     addSessionTokens,
     clearSessionStats,
-  } = useSessionStats();
+    setSessionStatsSnapshot,
+  } = useSessionStats(initialSession.sessionStats);
 
   // Wrapper function to add tokens to both per-request and session totals
   const handleApiTokens = (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) => {
@@ -60,6 +94,10 @@ function ChatContent({ agent }: ChatProps) {
     pauseMetrics, // Pause during approval
     resumeMetrics, // Resume after approval
     completeRequest, // Complete when agent is done
+    {
+      messages: deserializeChatMessages(initialSession.uiMessages),
+      userMessageHistory: initialSession.userMessageHistory,
+    },
   );
 
   const {
@@ -79,6 +117,7 @@ function ChatContent({ agent }: ChatProps) {
     addMessage,
     setApiKey,
     clearHistory,
+    replaceHistory,
     toggleAutoApprove,
     toggleReasoning,
     interruptRequest,
@@ -91,6 +130,117 @@ function ChatContent({ agent }: ChatProps) {
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showBaseURLSelector, setShowBaseURLSelector] = useState(false);
   const [showSeeyonAgentRunner, setShowSeeyonAgentRunner] = useState(false);
+
+	useEffect(() => {
+		try {
+			sessionStore.saveSessionState(activeSession.id, {
+				model: agent.getCurrentModel(),
+				temperature: agent.getTemperature(),
+				agentMessages: agent.exportMessages(),
+				baseAgentMessages: agent.exportBaseMessages(),
+				uiMessages: serializeChatMessages(messages),
+				userMessageHistory,
+				sessionStats,
+			});
+		} catch (error) {
+			debugLog('Failed to save session state:', error);
+		}
+	}, [activeSession.id, agent, messages, sessionStats, sessionStore, userMessageHistory]);
+
+	const handleStartNewSession = useCallback((title?: string) => {
+		agent.clearHistory();
+		const nextSession = sessionStore.createSession({
+			title,
+			model: agent.getCurrentModel(),
+			temperature: agent.getTemperature(),
+			agentMessages: agent.exportMessages(),
+			baseAgentMessages: agent.exportBaseMessages(),
+			sessionStats: createEmptySessionStats(),
+		});
+
+		replaceHistory([], []);
+		setSessionStatsSnapshot(createEmptySessionStats());
+		setActiveSession(nextSession);
+		addMessage({
+			role: 'system',
+			content: `Started new session ${shortSessionId(nextSession.id)}: ${nextSession.title}`,
+		});
+	}, [addMessage, agent, replaceHistory, sessionStore, setSessionStatsSnapshot]);
+
+	const handleResumeSession = useCallback((reference?: string) => {
+		try {
+			const sessionReference = reference?.trim();
+			const previousSession = sessionStore.listSessions().find((savedSession) => savedSession.id !== activeSession.id);
+			const session = sessionReference
+				? sessionStore.loadSession(sessionReference)
+				: previousSession
+					? sessionStore.loadSession(previousSession.id)
+					: null;
+
+			if (!session) {
+				addMessage({
+					role: 'system',
+					content: 'No previous session to resume.',
+				});
+				return;
+			}
+
+			agent.loadSessionState(
+				session.model,
+				session.temperature,
+				session.agentMessages,
+				session.baseAgentMessages,
+			);
+			replaceHistory(deserializeChatMessages(session.uiMessages), session.userMessageHistory);
+			setSessionStatsSnapshot(session.sessionStats);
+			setActiveSession(session);
+			addMessage({
+				role: 'system',
+				content: `Resumed session ${shortSessionId(session.id)}: ${session.title}`,
+			});
+		} catch (error) {
+			addMessage({
+				role: 'system',
+				content: `Failed to resume session: ${getErrorMessage(error)}`,
+			});
+		}
+	}, [activeSession.id, addMessage, agent, replaceHistory, sessionStore, setSessionStatsSnapshot]);
+
+	const handleDeleteSession = useCallback((reference: string) => {
+		try {
+			const deletedSessionId = sessionStore.deleteSession(reference);
+
+			if (deletedSessionId === activeSession.id) {
+				agent.clearHistory();
+				const nextSession = sessionStore.createSession({
+					model: agent.getCurrentModel(),
+					temperature: agent.getTemperature(),
+					agentMessages: agent.exportMessages(),
+					baseAgentMessages: agent.exportBaseMessages(),
+					sessionStats: createEmptySessionStats(),
+				});
+
+				replaceHistory([], []);
+				setSessionStatsSnapshot(createEmptySessionStats());
+				setActiveSession(nextSession);
+				addMessage({
+					role: 'system',
+					content: `Deleted active session ${shortSessionId(deletedSessionId)} and started ${shortSessionId(nextSession.id)}.`,
+				});
+				return;
+			}
+
+			addMessage({
+				role: 'system',
+				content: `Deleted session ${shortSessionId(deletedSessionId)}.`,
+			});
+		} catch (error) {
+			addMessage({
+				role: 'system',
+				content: `Failed to delete session: ${getErrorMessage(error)}`,
+			});
+		}
+	}, [activeSession.id, addMessage, agent, replaceHistory, sessionStore, setSessionStatsSnapshot]);
 
   // Handle global keyboard shortcuts
   useInput((input, key) => {
@@ -150,6 +300,11 @@ function ChatContent({ agent }: ChatProps) {
           setShowModelSelector,
           setShowBaseURLSelector,
           setShowSeeyonAgentRunner,
+					startNewSession: handleStartNewSession,
+					listSessions: () => sessionStore.listSessions(),
+					resumeSession: handleResumeSession,
+					deleteSession: handleDeleteSession,
+					activeSessionId: activeSession.id,
           toggleReasoning,
           showReasoning,
           toggleTheme,
@@ -160,6 +315,15 @@ function ChatContent({ agent }: ChatProps) {
       }
 
       // The agent will handle starting request tracking
+      const updatedTitle = sessionStore.updateAutoTitleFromUserMessage(activeSession.id, message);
+      if (updatedTitle) {
+				setActiveSession((session) => (
+					session.id === activeSession.id
+						? { ...session, title: updatedTitle, titleSource: 'auto' }
+						: session
+				));
+      }
+
       await sendMessage(message);
     }
   };
@@ -357,14 +521,18 @@ function ChatContent({ agent }: ChatProps) {
   );
 }
 
-export default function Chat({ agent }: ChatProps) {
+export default function Chat({ agent, sessionStore, initialSession }: ChatProps) {
   const configManager = new ConfigManager();
   const savedTheme = configManager.getTheme();
   const initialDarkTheme = savedTheme === 'dark';
 
   return (
     <ThemeProvider initialDarkTheme={initialDarkTheme}>
-      <ChatContent agent={agent} />
+      <ChatContent
+				agent={agent}
+				sessionStore={sessionStore}
+				initialSession={initialSession}
+      />
     </ThemeProvider>
   );
 }

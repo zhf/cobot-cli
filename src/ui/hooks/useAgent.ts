@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { Agent } from '../../core/agent.js';
+import { StoredChatMessage, StoredToolExecution } from '../../core/session-store.js';
 import { DANGEROUS_TOOLS, APPROVAL_REQUIRED_TOOLS } from '../../tools/schemas/index.js';
 
-export interface ChatMessage {
+export interface ChatMessage extends Omit<StoredChatMessage, 'timestamp' | 'toolExecution'> {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool' | 'tool_execution';
   content: string;
@@ -22,13 +23,18 @@ export interface ChatMessage {
   };
 }
 
-export interface ToolExecution {
+export interface ToolExecution extends StoredToolExecution {
   id: string;
   name: string;
   args: Record<string, any>;
   status: 'pending' | 'approved' | 'executing' | 'completed' | 'failed' | 'canceled';
   result?: any;
   needsApproval?: boolean;
+}
+
+interface UseAgentInitialState {
+  messages?: ChatMessage[];
+  userMessageHistory?: string[];
 }
 
 export function useAgent(
@@ -38,9 +44,10 @@ export function useAgent(
   onPauseRequest?: () => void,
   onResumeRequest?: () => void,
   onCompleteRequest?: () => void,
+  initialState: UseAgentInitialState = {},
 ) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [userMessageHistory, setUserMessageHistory] = useState<string[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialState.messages || []);
+  const [userMessageHistory, setUserMessageHistory] = useState<string[]>(initialState.userMessageHistory || []);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentToolExecution, setCurrentToolExecution] = useState<ToolExecution | null>(null);
   const [isSessionAutoApprovalEnabled, setSessionAutoApprove] = useState(false);
@@ -340,6 +347,13 @@ export function useAgent(
     agent.clearHistory();
   }, [agent]);
 
+  const replaceHistory = useCallback((nextMessages: ChatMessage[], nextUserMessageHistory: string[]) => {
+    setMessages(nextMessages);
+    setUserMessageHistory(nextUserMessageHistory);
+    setCurrentToolExecution(null);
+    currentToolExecutionIdRef.current = null;
+  }, []);
+
   const interruptRequest = useCallback(() => {
     agent.interrupt();
     setIsProcessing(false);
@@ -373,6 +387,7 @@ export function useAgent(
     addMessage: addMessageToHistory,
     setApiKey,
     clearHistory,
+    replaceHistory,
     toggleAutoApprove,
     toggleReasoning,
     interruptRequest,

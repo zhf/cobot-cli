@@ -1,3 +1,5 @@
+import type { SessionListItem } from '../core/session-store.js';
+
 export interface CommandContext {
   addMessage: (message: unknown) => void;
   clearHistory: () => void;
@@ -5,6 +7,12 @@ export interface CommandContext {
   setShowModelSelector?: (show: boolean) => void;
   setShowBaseURLSelector?: (show: boolean) => void;
   setShowSeeyonAgentRunner?: (show: boolean) => void;
+  commandArgs?: string;
+  startNewSession?: (title?: string) => void;
+  listSessions?: () => SessionListItem[];
+  resumeSession?: (reference?: string) => void;
+  deleteSession?: (reference: string) => void;
+  activeSessionId?: string;
   toggleReasoning?: () => void;
   showReasoning?: boolean;
   toggleTheme?: () => void;

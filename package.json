@@ -12,7 +12,7 @@
 	},
 	"type": "module",
 	"engines": {
-		"node": ">=16"
+		"bun": ">=1.2.22"
 	},
 	"scripts": {
 		"build": "tsc",

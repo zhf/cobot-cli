@@ -2,7 +2,38 @@ import chalk from 'chalk';
 import { render } from 'ink';
 import React from 'react';
 import { Agent } from '../core/agent.js';
+import { SessionRecord, SessionStore } from '../core/session-store.js';
 import App from '../ui/App.js';
+
+function printBanner(): void {
+  console.log(chalk.hex('#3f8097')(`
+┏━╸┏━┓┏┓ ┏━┓╺┳╸
+┃  ┃ ┃┣┻┓┃ ┃ ┃
+┗━╸┗━┛┗━┛┗━┛ ╹
+`));
+}
+
+async function renderChatSession(
+  sessionStore: SessionStore,
+  initialSession: SessionRecord,
+  debug?: boolean,
+): Promise<void> {
+  const agent = await Agent.create(
+    initialSession.model,
+    initialSession.temperature,
+    null,
+    debug,
+  );
+
+  agent.loadSessionState(
+    initialSession.model,
+    initialSession.temperature,
+    initialSession.agentMessages,
+    initialSession.baseAgentMessages,
+  );
+
+  render(React.createElement(App, { agent, sessionStore, initialSession }));
+}
 
 /**
  * Start the interactive terminal chat UI by creating an Agent and rendering the Ink App.
@@ -26,19 +57,49 @@ export async function startChat(
 //   ▌ ▛▌▛▌▛▌▜▘
 //   ▙▖▙▌▙▌▙▌▐▖
 // `));
-  console.log(chalk.hex('#3f8097')(`
-┏━╸┏━┓┏┓ ┏━┓╺┳╸
-┃  ┃ ┃┣┻┓┃ ┃ ┃ 
-┗━╸┗━┛┗━┛┗━┛ ╹ 
-`));
+  printBanner();
 
   try {
     // Create agent (API key will be checked on first message)
     const agent = await Agent.create(model, temperature, system, debug);
+    const sessionStore = new SessionStore();
+    const initialSession = sessionStore.createSession({
+      model: agent.getCurrentModel(),
+      temperature: agent.getTemperature(),
+      agentMessages: agent.exportMessages(),
+      baseAgentMessages: agent.exportBaseMessages(),
+    });
 
-    render(React.createElement(App, { agent }));
+    render(React.createElement(App, { agent, sessionStore, initialSession }));
   } catch (error) {
     console.log(chalk.red(`Error initializing agent: ${error}`));
+    process.exit(1);
+  }
+}
+
+export async function resumeChat(
+  sessionReference?: string,
+  debug?: boolean,
+): Promise<void> {
+  printBanner();
+
+  try {
+    const sessionStore = new SessionStore();
+    const latestSession = sessionStore.listSessions(1)[0];
+    const initialSession = sessionReference?.trim()
+      ? sessionStore.loadSession(sessionReference)
+      : latestSession
+				? sessionStore.loadSession(latestSession.id)
+				: null;
+
+    if (!initialSession) {
+      console.log(chalk.red('No saved sessions to resume.'));
+      process.exit(1);
+    }
+
+    await renderChatSession(sessionStore, initialSession, debug);
+  } catch (error) {
+    console.log(chalk.red(`Error resuming session: ${error}`));
     process.exit(1);
   }
 }
