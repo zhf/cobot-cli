@@ -4,6 +4,7 @@ export interface CommandContext {
   setShowLogin: (show: boolean) => void;
   setShowModelSelector?: (show: boolean) => void;
   setShowBaseURLSelector?: (show: boolean) => void;
+  setShowSeeyonAgentRunner?: (show: boolean) => void;
   toggleReasoning?: () => void;
   showReasoning?: boolean;
   toggleTheme?: () => void;

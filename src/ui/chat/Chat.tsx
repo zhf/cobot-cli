@@ -17,6 +17,7 @@ import ModelSelector from '../overlays/ModelSelector.js';
 import MaxIterationsContinue from '../overlays/MaxIterationsContinue.js';
 import ErrorRetry from '../overlays/ErrorRetry.js';
 import BaseURLSelector from '../overlays/BaseURLSelector.js';
+import SeeyonAgentRunner from '../overlays/SeeyonAgentRunner.js';
 import { handleSlashCommand } from '../../commands/index.js';
 
 interface ChatProps {
@@ -89,6 +90,7 @@ function ChatContent({ agent }: ChatProps) {
   const [showApiLogin, setShowApiLogin] = useState(false);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showBaseURLSelector, setShowBaseURLSelector] = useState(false);
+  const [showSeeyonAgentRunner, setShowSeeyonAgentRunner] = useState(false);
 
   // Handle global keyboard shortcuts
   useInput((input, key) => {
@@ -127,10 +129,10 @@ function ChatContent({ agent }: ChatProps) {
     }
   });
 
-  // Hide input when processing, waiting for approval, error retry, or showing login/model selector/baseurl selector
+  // Hide input when processing, waiting for approval, error retry, or showing overlays
   useEffect(() => {
-    setShowInput(!isProcessing && !pendingApproval && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector);
-  }, [isProcessing, pendingApproval, pendingError, showApiLogin, showModelSelector, showBaseURLSelector]);
+    setShowInput(!isProcessing && !pendingApproval && !pendingError && !showApiLogin && !showModelSelector && !showBaseURLSelector && !showSeeyonAgentRunner);
+  }, [isProcessing, pendingApproval, pendingError, showApiLogin, showModelSelector, showBaseURLSelector, showSeeyonAgentRunner]);
 
   const handleUserMessageSubmission = async (message: string) => {
     if (message.trim() && !isProcessing) {
@@ -147,6 +149,7 @@ function ChatContent({ agent }: ChatProps) {
           setShowLogin: setShowApiLogin,
           setShowModelSelector,
           setShowBaseURLSelector,
+          setShowSeeyonAgentRunner,
           toggleReasoning,
           showReasoning,
           toggleTheme,
@@ -230,6 +233,23 @@ function ChatContent({ agent }: ChatProps) {
     });
   };
 
+  const handleSeeyonAgentResult = (contextMessage: string, displayMessage: string) => {
+    setShowSeeyonAgentRunner(false);
+    agent.addContextMessage(contextMessage);
+    addMessage({
+      role: 'assistant',
+      content: displayMessage,
+    });
+  };
+
+  const handleSeeyonAgentCancel = () => {
+    setShowSeeyonAgentRunner(false);
+    addMessage({
+      role: 'system',
+      content: 'Seeyon Chat agent selection canceled.',
+    });
+  };
+
   return (
     <Box flexDirection="column" height="100%">
       {/* Chat messages area */}
@@ -300,6 +320,11 @@ function ChatContent({ agent }: ChatProps) {
             onSubmit={handleBaseURLSelect}
             onCancel={handleBaseURLCancel}
             currentBaseURL={agent.getBaseURL?.() || undefined}
+          />
+        ) : showSeeyonAgentRunner ? (
+          <SeeyonAgentRunner
+            onSubmit={handleSeeyonAgentResult}
+            onCancel={handleSeeyonAgentCancel}
           />
         ) : showInput ? (
           <MessageInput
