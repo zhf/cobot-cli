@@ -55,10 +55,31 @@ Or specify a model directly:
 cobot --model gpt-4o-mini
 ```
 
+Run a one-off non-interactive prompt:
+```bash
+cobot run "summarize this project"
+```
+
+You can also pipe context into either `run` or the legacy `--prompt` option:
+```bash
+git diff | cobot run "review these changes"
+git diff | cobot --prompt "review these changes"
+```
+
+Generate project context files for the current workspace:
+```bash
+cobot init
+```
+
 ### Command Line Options
 
 ```bash
-cobot [options]
+cobot [options] [command]
+
+Commands:
+  run [prompt...]             Run in non-interactive mode with a prompt
+  init                        Generate project context files in .cobot/
+  config                      Manage stored Cobot configuration
 
 Options:
   -V, --version                    output the version number
@@ -70,27 +91,41 @@ Options:
   -h, --help                       display help for command
 ```
 
+### Configuration Commands
+
+```bash
+cobot config get
+cobot config set apikey <key>
+cobot config set baseurl <url>
+cobot config set model <model>
+cobot config set theme <dark|light>
+cobot config set extraRequest '{"reasoning_effort":"low"}'
+cobot config clear apikey
+cobot config clear baseurl
+cobot config clear extraRequest
+```
+
 ### Getting Started
 
 On first use, we recommend setting up your API configuration in this order:
 
 1. **Set your API key**:
 ```bash
-cobot
+cobot config set apikey your_api_key_here
 ```
-Then use the `/apikey` command to set your OpenAI API key.
+You can also run `cobot` and use the `/apikey` command interactively.
 
 2. **Set your base URL** (if using a custom API endpoint):
 ```bash
-/baseurl
+cobot config set baseurl https://api.openai.com/v1
 ```
-This allows you to use custom OpenAI-compatible APIs like BigModel, Groq, etc.
+You can also use `/baseurl` inside interactive chat. This allows you to use custom OpenAI-compatible APIs like BigModel, Groq, etc.
 
 3. **Select your model**:
 ```bash
-/model
+cobot config set model gpt-4o-mini
 ```
-Choose from available models or enter a custom model name.
+You can also use `/model` inside interactive chat to choose from available models or enter a custom model name.
 
 4. **Customize your theme** (optional):
 ```bash
@@ -129,6 +164,8 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 
 **How it works:**
 - If a value exists in the config file, it will always be used first
+- Config file string values may reference environment variables with `$VAR` or `${VAR}` syntax, and Cobot expands them when reading config
+- `extraRequest` is a JSON object serialized as a string; it is merged into every model request as default request body fields before code-controlled fields like `model`, `messages`, `tools`, and token limits are applied
 - If no config file value exists, COBOT_* variables are checked
 - If no COBOT_* variables are set, OPENAI_* variables are used as fallback
 - This allows for flexible configuration in different environments
@@ -220,14 +257,15 @@ All preferences are stored in `~/.cobot/config.json` with secure file permission
 
 ```json
 {
-  "openaiApiKey": "sk-...",
-  "defaultModel": "gpt-4o",
-  "openaiBaseURL": "https://api.openai.com/v1",
+  "openaiApiKey": "$OPENAI_API_KEY",
+  "defaultModel": "gpt-4o-mini",
+  "openaiBaseURL": "$OPENAI_BASE_URL",
+  "extraRequest": "{\"reasoning_effort\":\"low\"}",
   "theme": "dark"
 }
 ```
 
-- **API Configuration**: API keys, base URLs, and model preferences
+- **API Configuration**: API keys, base URLs, model preferences, and optional extra request defaults
 - **Theme Settings**: Light/dark theme preference (automatically persisted)
 - **Security**: Owner-only read/write permissions for sensitive data
 - **Migration**: Existing configurations remain compatible
