@@ -13,6 +13,7 @@ export interface ToolResult {
   data?: any;
   message?: string;
   error?: string;
+  userRejected?: boolean;
 }
 
 /**

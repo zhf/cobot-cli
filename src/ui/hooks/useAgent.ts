@@ -119,6 +119,16 @@ export function useAgent(
             reasoning,
           });
         },
+        onStreamStart: () => addMessageToHistory({
+          role: 'assistant',
+          content: '',
+        }),
+        onStreamUpdate: (messageId: string, content: string, reasoning?: string) => {
+          updateMessageInHistory(messageId, {
+            content,
+            reasoning,
+          });
+        },
         onToolStart: (name: string, args: Record<string, any>) => {
           const toolExecution: ToolExecution = {
             id: Math.random().toString(36).substr(2, 9),

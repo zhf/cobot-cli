@@ -8,7 +8,7 @@ import { ALL_TOOL_SCHEMAS } from '../tools/schemas/index.js';
 import ConfigManager from '../config/ConfigManager.js';
 import { Message, ToolCall, ApiError } from './messages.js';
 import { debugLog, setDebugLoggingEnabled } from './logger.js';
-import { buildChatCompletionPayload, createChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
+import { buildChatCompletionPayload, createStreamingChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
 
 
@@ -46,6 +46,10 @@ export class Agent {
   private onThinkingText?: (content: string, reasoning?: string) => void;
 
   private onFinalMessage?: (content: string, reasoning?: string) => void;
+
+  private onStreamStart?: () => string;
+
+  private onStreamUpdate?: (messageId: string, content: string, reasoning?: string) => void;
 
   private onMaxIterations?: (maxIterations: number) => Promise<boolean>;
 
@@ -196,8 +200,10 @@ Never generate markdown tables. Be brief and efficient.
     onToolStart?: (name: string, args: Record<string, unknown>) => void;
     onToolEnd?: (name: string, result: unknown) => void;
     onToolApproval?: (toolName: string, toolArgs: Record<string, unknown>) => Promise<{ approved: boolean; autoApproveSession?: boolean }>;
-    onThinkingText?: (content: string) => void;
-    onFinalMessage?: (content: string) => void;
+    onThinkingText?: (content: string, reasoning?: string) => void;
+    onFinalMessage?: (content: string, reasoning?: string) => void;
+    onStreamStart?: () => string;
+    onStreamUpdate?: (messageId: string, content: string, reasoning?: string) => void;
     onMaxIterations?: (maxIterations: number) => Promise<boolean>;
     onApiUsage?: (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; total_time?: number }) => void;
     onError?: (error: string) => Promise<boolean>;
@@ -207,9 +213,112 @@ Never generate markdown tables. Be brief and efficient.
     this.onToolApproval = callbacks.onToolApproval;
     this.onThinkingText = callbacks.onThinkingText;
     this.onFinalMessage = callbacks.onFinalMessage;
+    this.onStreamStart = callbacks.onStreamStart;
+    this.onStreamUpdate = callbacks.onStreamUpdate;
     this.onMaxIterations = callbacks.onMaxIterations;
     this.onApiUsage = callbacks.onApiUsage;
     this.onError = callbacks.onError;
+  }
+
+  private async createStreamingResponse(options: ChatCompletionOptions): Promise<{
+    content: string;
+    reasoning?: string;
+    toolCalls?: ToolCall[];
+    streamedMessageId?: string;
+    finishReason?: string | null;
+    usage?: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    };
+  }> {
+    if (!this.client) {
+      throw new Error('OpenAI client not initialized');
+    }
+
+    const stream = await createStreamingChatCompletion(this.client, options);
+    const toolCallAccumulators = new Map<number, {
+      id?: string;
+      type?: string;
+      function: {
+        name: string;
+        arguments: string;
+      };
+    }>();
+    let content = '';
+    let reasoning = '';
+    let streamedMessageId: string | undefined;
+    let finishReason: string | null | undefined;
+    let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
+
+    for await (const chunk of stream) {
+      if (chunk.usage) {
+        usage = {
+          prompt_tokens: chunk.usage.prompt_tokens,
+          completion_tokens: chunk.usage.completion_tokens,
+          total_tokens: chunk.usage.total_tokens,
+        };
+      }
+
+      const choice = chunk.choices[0];
+      if (!choice) {
+        continue;
+      }
+
+      finishReason = choice.finish_reason ?? finishReason;
+      const { delta } = choice;
+      const contentDelta = delta.content || '';
+      const reasoningDelta = getStringField(delta, 'reasoning_content') || getStringField(delta, 'reasoning') || '';
+
+      content += contentDelta;
+      reasoning += reasoningDelta;
+
+      if ((contentDelta || reasoningDelta) && this.onStreamStart && this.onStreamUpdate) {
+        streamedMessageId ||= this.onStreamStart();
+        this.onStreamUpdate(streamedMessageId, content, reasoning || undefined);
+      }
+
+      for (const toolCallDelta of delta.tool_calls || []) {
+        const accumulator = toolCallAccumulators.get(toolCallDelta.index) || {
+          function: {
+            name: '',
+            arguments: '',
+          },
+        };
+
+        if (toolCallDelta.id) {
+          accumulator.id = toolCallDelta.id;
+        }
+        if (toolCallDelta.type) {
+          accumulator.type = toolCallDelta.type;
+        }
+        if (toolCallDelta.function?.name) {
+          accumulator.function.name += toolCallDelta.function.name;
+        }
+        if (toolCallDelta.function?.arguments) {
+          accumulator.function.arguments += toolCallDelta.function.arguments;
+        }
+
+        toolCallAccumulators.set(toolCallDelta.index, accumulator);
+      }
+    }
+
+    const toolCalls = [...toolCallAccumulators.entries()]
+      .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
+      .map(([index, toolCall]) => ({
+        id: toolCall.id || `call_${index}`,
+        type: toolCall.type || 'function',
+        function: toolCall.function,
+      }));
+
+    return {
+      content,
+      reasoning: reasoning || undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      streamedMessageId,
+      finishReason,
+      usage,
+    };
   }
 
   public setApiKey(apiKey: string): void {
@@ -442,7 +551,8 @@ Never generate markdown tables. Be brief and efficient.
             max_tokens: 8000,
             tools: ALL_TOOL_SCHEMAS,
             tool_choice: 'auto',
-            stream: false,
+            stream: true,
+            stream_options: { include_usage: true },
             signal: this.currentAbortController.signal,
           };
 
@@ -458,17 +568,17 @@ Never generate markdown tables. Be brief and efficient.
             debugLog('Equivalent curl command:', curlCommand);
           }
 
-          const response = await createChatCompletion(this.client, options);
+          const response = await this.createStreamingResponse(options);
 
-          debugLog('Full API response received:', response);
+          debugLog('Full streaming API response accumulated:', response);
           debugLog('Response usage:', response.usage);
-          debugLog('Response finish_reason:', response.choices[0].finish_reason);
-          debugLog('Response choices length:', response.choices.length);
+          debugLog('Response finish_reason:', response.finishReason);
 
-          const { message } = response.choices[0];
-
-          // Extract model reasoning if present
-          const modelReasoning = (message as any).reasoning;
+          const message = {
+            content: response.content,
+            tool_calls: response.toolCalls,
+          };
+          const modelReasoning = response.reasoning;
 
           // Pass usage data to callback if available
           if (response.usage && this.onApiUsage) {
@@ -482,14 +592,14 @@ Never generate markdown tables. Be brief and efficient.
           debugLog('Message has tool_calls:', !!message.tool_calls);
           debugLog('Message tool_calls count:', message.tool_calls?.length || 0);
 
-          if (response.choices[0].finish_reason !== 'stop' && response.choices[0].finish_reason !== 'tool_calls') {
-            debugLog('WARNING - Unexpected finish_reason:', response.choices[0].finish_reason);
+          if (response.finishReason !== 'stop' && response.finishReason !== 'tool_calls') {
+            debugLog('WARNING - Unexpected finish_reason:', response.finishReason);
           }
 
           // Handle tool calls if present
           if (message.tool_calls) {
             // Show thinking text or model reasoning if present
-            if (message.content || modelReasoning) {
+            if ((message.content || modelReasoning) && !response.streamedMessageId) {
               if (this.onThinkingText) {
                 this.onThinkingText(message.content || '', modelReasoning);
               }
@@ -504,8 +614,8 @@ Never generate markdown tables. Be brief and efficient.
               id: tc.id,
               type: tc.type,
               function: {
-                name: (tc as any).function.name,
-                arguments: (tc as any).function.arguments
+                name: tc.function.name,
+                arguments: tc.function.arguments
               }
             }));
             this.messages.push(assistantMsg);
@@ -523,8 +633,8 @@ Never generate markdown tables. Be brief and efficient.
                 id: toolCallRequest.id,
                 type: toolCallRequest.type,
                 function: {
-                  name: (toolCallRequest as any).function.name,
-                  arguments: (toolCallRequest as any).function.arguments
+                  name: toolCallRequest.function.name,
+                  arguments: toolCallRequest.function.arguments
                 }
               };
               const callbacks: ToolExecutorCallbacks = {
@@ -548,10 +658,9 @@ Never generate markdown tables. Be brief and efficient.
               });
 
               // Check if user rejected the tool, if so, stop processing
-              if ((result as any).userRejected) {
+              if (result.userRejected) {
                 // Add a note to the conversation that the user rejected the tool
-                const toolName = ('function' in toolCallRequest && toolCallRequest.function) ? toolCallRequest.function.name
-                  : ('custom' in toolCallRequest && toolCallRequest.custom) ? toolCallRequest.custom.name : 'unknown tool';
+                const toolName = toolCallRequest.function.name || 'unknown tool';
                 this.messages.push({
                   role: 'system',
                   content: `The user rejected the ${toolName} tool execution. The response has been terminated. Please wait for the user's next instruction.`,
@@ -571,9 +680,11 @@ Never generate markdown tables. Be brief and efficient.
           debugLog('Final content length:', content.length);
           debugLog('Final content preview:', content.substring(0, 200));
 
-          if (this.onFinalMessage) {
+          if (this.onFinalMessage && !response.streamedMessageId) {
             debugLog('Calling onFinalMessage callback');
             this.onFinalMessage(content, modelReasoning);
+          } else if (response.streamedMessageId) {
+            debugLog('Final message was already streamed to UI');
           } else {
             debugLog('No onFinalMessage callback set');
           }
@@ -691,4 +802,13 @@ function generateDebugCurlCommand(apiKey: string, apiRequestPayload: Record<stri
 
 function cloneMessages(messages: Message[]): Message[] {
   return JSON.parse(JSON.stringify(messages)) as Message[];
+}
+
+function getStringField(value: unknown, key: string): string | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === 'string' ? field : undefined;
 }

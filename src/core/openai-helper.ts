@@ -7,9 +7,10 @@ export interface ChatCompletionOptions {
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   temperature?: number;
   max_tokens?: number;
-  tools?: any;
-  tool_choice?: any;
+  tools?: OpenAI.Chat.Completions.ChatCompletionTool[];
+  tool_choice?: OpenAI.Chat.Completions.ChatCompletionToolChoiceOption;
   stream?: boolean;
+  stream_options?: OpenAI.Chat.Completions.ChatCompletionStreamOptions;
   signal?: AbortSignal;
 }
 
@@ -28,6 +29,7 @@ export function buildChatCompletionPayload(options: ChatCompletionOptions): Reco
     tools,
     tool_choice,
     stream = false,
+    stream_options,
   } = options;
   const configManager = new ConfigManager();
   const completionOptions: Record<string, unknown> = {
@@ -47,6 +49,10 @@ export function buildChatCompletionPayload(options: ChatCompletionOptions): Reco
     completionOptions.tool_choice = tool_choice;
   }
 
+  if (stream_options) {
+    completionOptions.stream_options = stream_options;
+  }
+
   return completionOptions;
 }
 
@@ -62,4 +68,18 @@ export async function createChatCompletion(
   }
 
   return client.chat.completions.create(completionOptions as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, requestConfig);
+}
+
+export async function createStreamingChatCompletion(
+  client: OpenAI,
+  options: ChatCompletionOptions
+): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  const completionOptions = buildChatCompletionPayload({ ...options, stream: true });
+
+  const requestConfig: { signal?: AbortSignal } = {};
+  if (options.signal) {
+    requestConfig.signal = options.signal;
+  }
+
+  return client.chat.completions.create(completionOptions as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming, requestConfig);
 }
