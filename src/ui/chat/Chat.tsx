@@ -311,7 +311,7 @@ function ChatContent({ agent }: ChatProps) {
           />
         ) : (
           <Box>
-            <Text color={colors.muted} dimColor>Processing...</Text>
+            <Text color={colors.muted}>Processing...</Text>
           </Box>
         )}
       </Box>
@@ -323,7 +323,7 @@ function ChatContent({ agent }: ChatProps) {
           </Text>
         </Box>
         <Box>
-          <Text color={colors.muted} dimColor>
+          <Text color={colors.muted}>
             {isDarkTheme ? '🌙 dark' : '☀️ light'} theme | {agent.getCurrentModel?.() || ''}
           </Text>
         </Box>

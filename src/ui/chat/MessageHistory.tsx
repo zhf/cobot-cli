@@ -151,10 +151,10 @@ export default function MessageHistory({ messages, showReasoning = true, usageDa
     <Box ref={scrollRef} flexDirection="column" flexGrow={1}>
       {messages.length === 0 ? (
         <Box justifyContent="center" paddingY={2} flexDirection="column" alignItems="center">
-          <Text color={colors.muted} dimColor italic>
+          <Text color={colors.muted} italic>
             Ask for help with coding tasks or everyday office challenges.
           </Text>
-          <Text color={colors.muted} dimColor italic>
+          <Text color={colors.muted} italic>
             Type /help for available commands and features.
           </Text>
         </Box>
