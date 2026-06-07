@@ -62,6 +62,12 @@ Run a one-off non-interactive prompt:
 cobot run "summarize this project"
 ```
 
+Run without tool approval prompts:
+```bash
+cobot --yolo
+cobot run --yolo "fix the build"
+```
+
 Resume the latest saved interactive session:
 ```bash
 cobot resume
@@ -70,10 +76,9 @@ cobot resume a1b2c3d4
 
 Run a Seeyon Chat agent by name:
 ```bash
-cobot agents
-cobot agent "Agent Name" "summarize this project"
-cobot "Agent Name" "summarize this project"
-cobot agent 665f1c1234567890abcdef12 "summarize this project"
+cobot bots
+cobot bot "Agent Name" "summarize this project"
+cobot bot 665f1c1234567890abcdef12 "summarize this project"
 ```
 
 You can also pipe context into either `run` or the legacy `--prompt` option:
@@ -93,8 +98,10 @@ cobot init
 cobot [options] [command]
 
 Commands:
-  agents                      List Seeyon Chat agents accessible to the configured account
-  agent <agentName> [prompt...] Run a Seeyon Chat agent by name or chatbot id in non-interactive mode
+  agents                      List configured coding agents
+  agent [agentName]           Show or set the default coding agent
+  bots                        List Seeyon Chat bots accessible to the configured account
+  bot <botName> [prompt...]   Run a Seeyon Chat bot by name or chatbot id
   run [prompt...]             Run in non-interactive mode with a prompt
   resume [sessionRef]         Resume the latest saved chat session, or one by id/prefix
   init                        Generate project context files in .cobot/
@@ -104,6 +111,8 @@ Options:
   -V, --version                    output the version number
   -t, --temperature <temperature>  Temperature for generation (default: 1)
   -m, --model <model>              AI model to use for generation (default: "gpt-4o-mini")
+  -a, --agent <agent>              Coding agent to use
+  --yolo                           Use the approval-free yolo coding agent
   -s, --system <message>           Custom system message
   -d, --debug                      Enable debug logging to debug-agent.log in current directory
   -p, --prompt <prompt>            Run in non-interactive mode with a predefined prompt
@@ -232,6 +241,7 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 - `/reasoning` - Toggle display of reasoning content in messages
 - `/stats` - Display session statistics and token usage
 - `/theme` - Toggle between light and dark themes (preference is automatically saved)
+- `/yolo` - Switch to approval-free yolo mode; use `/yolo off` to return to build mode
 
 ## Features
 
@@ -294,7 +304,9 @@ You can specify the model to use either through the `/model` command during chat
 ### Safety Features
 
 - Tool execution approval system for potentially dangerous operations
-- Session auto-approval toggle (Shift+Tab) for repetitive file operations
+- Session auto-approval toggle (Tab on empty input)
+- YOLO mode (`--yolo` or `/yolo`) for approval-free tool execution
+- Coding agent cycling with Shift+Tab
 - Command execution safety limits (no long-running processes)
 - Secure storage of API keys with restrictive file permissions
 

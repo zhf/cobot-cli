@@ -27,6 +27,7 @@ import ErrorRetry from '../overlays/ErrorRetry.js';
 import BaseURLSelector from '../overlays/BaseURLSelector.js';
 import SeeyonAgentRunner from '../overlays/SeeyonAgentRunner.js';
 import { handleSlashCommand } from '../../commands/index.js';
+import { YOLO_AGENT_NAME } from '../../core/coding-agents.js';
 
 interface ChatProps {
   agent: Agent;
@@ -459,6 +460,13 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
     });
   };
 
+  const activeCodingAgentName = agent.getActiveCodingAgent().name;
+  const approvalStatus = activeCodingAgentName === YOLO_AGENT_NAME
+    ? 'YOLO mode is on'
+    : sessionAutoApprove
+      ? 'auto-approval is on'
+      : '';
+
   return (
     <Box flexDirection="column" height="100%">
       {/* Chat messages area */}
@@ -553,12 +561,12 @@ function ChatContent({ agent, sessionStore, initialSession }: ChatProps) {
       <Box justifyContent="space-between" paddingX={1}>
         <Box>
           <Text color={colors.primary} bold>
-            {sessionAutoApprove ? 'auto-approve edits is on' : ''}
+            {approvalStatus}
           </Text>
         </Box>
         <Box>
           <Text color={colors.muted}>
-            {isDarkTheme ? '🌙 dark' : '☀️ light'} theme | {agent.getCurrentModel?.() || ''}
+            {isDarkTheme ? '🌙 dark' : '☀️ light'} theme | {activeCodingAgentName} agent | {agent.getCurrentModel?.() || ''}
           </Text>
         </Box>
       </Box>

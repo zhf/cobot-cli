@@ -38,7 +38,10 @@ interface MarkdownAgentData extends CodingAgentConfig {
 
 const DEFAULT_BUILD_DESCRIPTION = 'Default coding agent with normal tool access and approval prompts.';
 const DEFAULT_PLAN_DESCRIPTION = 'Read-only planning agent for analysis without file or command changes.';
+const DEFAULT_YOLO_DESCRIPTION = 'Approval-free coding agent that allows all tools without prompts.';
 const AGENT_DIRECTORY_NAME = 'agents';
+
+export const YOLO_AGENT_NAME = 'yolo';
 
 const TOOL_PERMISSIONS: Record<string, PermissionKey> = {
   open_file: 'read',
@@ -77,6 +80,12 @@ const PLAN_PERMISSIONS: Required<PermissionConfig> = {
   database: 'deny',
   media: 'deny',
 };
+
+function createYoloPermissions(): Required<PermissionConfig> {
+  return Object.fromEntries(
+    Object.keys(DEFAULT_PERMISSIONS).map((key) => [key, 'allow']),
+  ) as Required<PermissionConfig>;
+}
 
 function clonePermissions(permission: Required<PermissionConfig>): Required<PermissionConfig> {
   return { ...permission };
@@ -187,6 +196,13 @@ function builtInAgents(): Record<string, CodingAgentInfo> {
         'If implementation is needed, provide a concise plan and ask the user to switch to a build-capable agent.',
       ].join('\n'),
       permission: clonePermissions(PLAN_PERMISSIONS),
+      native: true,
+    },
+    [YOLO_AGENT_NAME]: {
+      name: YOLO_AGENT_NAME,
+      description: DEFAULT_YOLO_DESCRIPTION,
+      mode: 'primary',
+      permission: createYoloPermissions(),
       native: true,
     },
   };

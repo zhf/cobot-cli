@@ -658,7 +658,8 @@ export const APPROVAL_REQUIRED_TOOLS = [
   'execute_clickhouse_query',
 ];
 
-// Dangerous tools that always require approval
+// Dangerous tools: approval UI does not offer "approve for session" for these.
+// Agent permissions such as yolo can still allow them without prompting.
 export const DANGEROUS_TOOLS = [
   'delete_file',
   'execute_command',

@@ -18,10 +18,11 @@ Navigation:
 - Type '/' to view available slash commands.
 - Use the arrow keys to navigate slash command suggestions.
 - Press Enter to execute the selected command.
+- Use /yolo to switch to approval-free yolo mode, or /yolo off to return to build mode.
 
 Keyboard Shortcuts:
 - Esc: Clear the input box, interrupt processing, or reject tool approval.
-- Tab on empty input: Toggle approval mode.
+- Tab on empty input: Toggle session auto-approval.
 - Shift+Tab: Cycle coding agents.
 - Ctrl+C: Exit the application.
 

@@ -6,7 +6,7 @@ import { buildPromptWithStdin } from '../cli/promptInput.js';
 import ConfigManager from '../config/ConfigManager.js';
 import { SeeyonChatClient, SeeyonChatError } from '../core/seeyon-chat.js';
 import { writeProjectContext } from '../utils/context/projectContext.js';
-import { formatCodingAgentList, loadCodingAgents, resolveCodingAgent } from '../core/coding-agents.js';
+import { formatCodingAgentList, loadCodingAgents, resolveCodingAgent, YOLO_AGENT_NAME } from '../core/coding-agents.js';
 
 interface GlobalOptions {
   temperature: number;
@@ -15,10 +15,12 @@ interface GlobalOptions {
   debug?: boolean;
   prompt?: string;
   agent?: string;
+  yolo?: boolean;
 }
 
 interface RunOptions {
   agent?: string;
+  yolo?: boolean;
 }
 
 function getGlobalOptions(): GlobalOptions {
@@ -42,6 +44,14 @@ function exitWithError(message: string): never {
   process.exit(1);
 }
 
+function resolveAgentOption(options: GlobalOptions, commandAgent?: string, commandYolo?: boolean): string | null {
+  if (commandYolo || options.yolo) {
+    return YOLO_AGENT_NAME;
+  }
+
+  return commandAgent || options.agent || null;
+}
+
 async function runPromptCommand(prompt: string): Promise<void> {
   const options = getGlobalOptions();
 
@@ -51,11 +61,11 @@ async function runPromptCommand(prompt: string): Promise<void> {
     options.temperature,
     options.system || null,
     options.debug,
-    options.agent || null,
+    resolveAgentOption(options),
   );
 }
 
-async function runPromptCommandWithAgent(prompt: string, codingAgentName?: string): Promise<void> {
+async function runPromptCommandWithAgent(prompt: string, codingAgentName?: string, yolo?: boolean): Promise<void> {
   const options = getGlobalOptions();
 
   await runPrompt(
@@ -64,7 +74,7 @@ async function runPromptCommandWithAgent(prompt: string, codingAgentName?: strin
     options.temperature,
     options.system || null,
     options.debug,
-    codingAgentName || options.agent || null,
+    resolveAgentOption(options, codingAgentName, yolo),
   );
 }
 
@@ -240,6 +250,7 @@ program
   .option('-t, --temperature <temperature>', 'Temperature for generation', parseFloat, 1.0)
   .option('-m, --model <model>', 'AI model to use for generation', 'gpt-4o-mini')
   .option('-a, --agent <agent>', 'Coding agent to use')
+  .option('--yolo', 'Use the approval-free yolo coding agent')
   .option('-s, --system <message>', 'Custom system message')
   .option('-d, --debug', 'Enable debug logging to debug-agent.log in current directory')
   .option('-p, --prompt <prompt>', 'Run in non-interactive mode with a predefined prompt')
@@ -256,7 +267,7 @@ program
         options.temperature,
         options.system || null,
         options.debug,
-        options.agent || null,
+        resolveAgentOption(options),
       );
     }
   });
@@ -299,6 +310,7 @@ program
   .command('run [prompt...]')
   .description('Run in non-interactive mode with a prompt')
   .option('-a, --agent <agent>', 'Coding agent to use')
+  .option('--yolo', 'Use the approval-free yolo coding agent')
   .action(async (promptParts: string[], commandOptions: RunOptions) => {
     const prompt = await buildPromptWithStdin(promptParts.join(' '));
 
@@ -306,7 +318,7 @@ program
       exitWithError('Provide a prompt argument or pipe input to stdin.');
     }
 
-    await runPromptCommandWithAgent(prompt, commandOptions.agent);
+    await runPromptCommandWithAgent(prompt, commandOptions.agent, commandOptions.yolo);
   });
 
 program
