@@ -16,6 +16,7 @@
 	},
 	"scripts": {
 		"build": "tsc",
+		"build:executables": "bun scripts/build-executables.ts",
 		"dev": "tsc --watch",
 		"start": "bun dist/bin/cobot.js",
 		"typecheck": "tsc --noEmit"
