@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { GitignoreFilter } from '../utils/gitignore.js';
 import { ToolResult, createToolResponse } from './files.js';
 
 // Helper interfaces for search results
@@ -179,6 +180,7 @@ async function collectFiles(
   excludeFiles?: string[],
 ): Promise<string[]> {
   const files: string[] = [];
+  const gitignore = new GitignoreFilter(directory);
 
   async function walkDirectory(dir: string): Promise<void> {
     try {
@@ -196,8 +198,14 @@ async function collectFiles(
           if (entry.name.startsWith('.') && !entry.name.match(/^\.(config|env)$/)) {
             continue;
           }
+          if (gitignore.isIgnored(fullPath, true)) {
+            continue;
+          }
           await walkDirectory(fullPath);
         } else if (entry.isFile()) {
+          if (gitignore.isIgnored(fullPath, false)) {
+            continue;
+          }
           // Check file type filters
           if (fileTypes && fileTypes.length > 0) {
             const ext = path.extname(entry.name).slice(1);

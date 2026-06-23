@@ -32,6 +32,8 @@ export interface ExploreScanConfig {
   recentFirst?: boolean;
   multiRepoMinDirs?: number;
   perRepoMaxFiles?: number;
+  ignoreDirs?: string[];
+  honorGitignore?: boolean;
 }
 
 interface ExploreConfig {
@@ -70,6 +72,11 @@ const DEFAULT_SCAN_RECENT_FIRST = true;
 const DEFAULT_SCAN_MULTI_REPO_MIN_DIRS = 8;
 const DEFAULT_SCAN_PER_REPO_MIN_FILES = 1500;
 const DEFAULT_SCAN_MULTI_REPO_CAP = 40;
+const DEFAULT_SCAN_IGNORE_DIRS = [
+  '.git', '.hg', '.svn', 'node_modules', '.next', '.nuxt', 'dist', 'build', 'out',
+  '.cache', 'coverage', 'target', '.turbo', '.parcel-cache',
+];
+const DEFAULT_SCAN_HONOR_GITIGNORE = true;
 
 const CONFIG_DIRECTORY_NAME = '.cobot'; // In home directory
 const CONFIG_FILE_NAME = 'config.json';
@@ -153,6 +160,18 @@ function expandExploreScanConfig(value: ExploreScanConfig | undefined): ExploreS
   }
   if (typeof value.perRepoMaxFiles === 'number' && Number.isFinite(value.perRepoMaxFiles) && value.perRepoMaxFiles > 0) {
     expanded.perRepoMaxFiles = Math.floor(value.perRepoMaxFiles);
+  }
+  if (Array.isArray(value.ignoreDirs)) {
+    const ignoreDirs = value.ignoreDirs
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    if (ignoreDirs.length > 0) {
+      expanded.ignoreDirs = ignoreDirs;
+    }
+  }
+  if (typeof value.honorGitignore === 'boolean') {
+    expanded.honorGitignore = value.honorGitignore;
   }
   return expanded;
 }
@@ -374,6 +393,25 @@ class ConfigManager {
     if (scanEnv.perRepoMaxFiles === undefined && perRepoMaxFilesEnv !== undefined) {
       const parsed = Number(perRepoMaxFilesEnv);
       if (Number.isFinite(parsed) && parsed > 0) scanEnv.perRepoMaxFiles = Math.floor(parsed);
+    }
+    const ignoreDirsEnv = process.env.COBOT_EXPLORE_SCAN_IGNORE_DIRS;
+    if (scanEnv.ignoreDirs === undefined && ignoreDirsEnv !== undefined) {
+      const ignoreDirs = ignoreDirsEnv
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+      if (ignoreDirs.length > 0) {
+        scanEnv.ignoreDirs = ignoreDirs;
+      }
+    }
+    const honorGitignoreEnv = process.env.COBOT_EXPLORE_SCAN_HONOR_GITIGNORE;
+    if (scanEnv.honorGitignore === undefined && honorGitignoreEnv !== undefined) {
+      const normalized = honorGitignoreEnv.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+        scanEnv.honorGitignore = true;
+      } else if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+        scanEnv.honorGitignore = false;
+      }
     }
     if (Object.keys(scanEnv).length > 0) {
       mergedConfig.explore = {
@@ -771,6 +809,10 @@ class ConfigManager {
     const config = this.getConfig();
     const scan = config.explore?.scan;
     const maxFiles = typeof scan?.maxFiles === 'number' ? scan.maxFiles : DEFAULT_SCAN_MAX_FILES;
+    const ignoreDirs = [...new Set([
+      ...DEFAULT_SCAN_IGNORE_DIRS,
+      ...(Array.isArray(scan?.ignoreDirs) ? scan.ignoreDirs : []),
+    ])];
     return {
       maxFiles,
       recentFirst: scan?.recentFirst ?? DEFAULT_SCAN_RECENT_FIRST,
@@ -781,6 +823,8 @@ class ConfigManager {
           DEFAULT_SCAN_PER_REPO_MIN_FILES,
           Math.floor(maxFiles / DEFAULT_SCAN_MULTI_REPO_CAP),
         ),
+      ignoreDirs,
+      honorGitignore: scan?.honorGitignore ?? DEFAULT_SCAN_HONOR_GITIGNORE,
     };
   }
 

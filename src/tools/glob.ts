@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { glob as globFiles } from 'glob';
+import { getGitignoreFilter } from '../utils/gitignore.js';
 import { ToolResult, createToolResponse } from './files.js';
 
 const MAX_RESULTS = 100;
@@ -11,11 +12,15 @@ export async function glob(pattern: string, searchPath: string = '.'): Promise<T
     }
 
     const cwd = path.resolve(searchPath || '.');
+    const gitignore = getGitignoreFilter(cwd);
     const matches = await globFiles(pattern, {
       cwd,
       dot: true,
       nodir: true,
       absolute: false,
+      ignore: {
+        ignored: (entry) => gitignore.isIgnored(path.join(cwd, entry.name), entry.isDirectory()),
+      },
     });
 
     const sortedMatches = matches.sort((a, b) => a.localeCompare(b));

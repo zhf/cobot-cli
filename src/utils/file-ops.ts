@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import IGNORE_PATTERNS from './ignorePatterns.js';
+import { isGitignored } from './gitignore.js';
 
 /**
  * Write content to a file with safety checks
@@ -130,6 +131,10 @@ export function shouldFileOrDirectoryBeIgnored(filePath: string): boolean {
   // Ignore hidden files and directories (starting with .)
   const allowedHiddenFiles = new Set(['.env', '.gitignore', '.dockerfile']);
   if (name.startsWith('.') && !allowedHiddenFiles.has(name)) {
+    return true;
+  }
+
+  if (isGitignored(pathStr)) {
     return true;
   }
 

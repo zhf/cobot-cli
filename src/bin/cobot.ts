@@ -128,6 +128,8 @@ function printConfig(): void {
   console.log(`explore.scan.recentFirst: ${scanConfig.recentFirst}`);
   console.log(`explore.scan.multiRepoMinDirs: ${scanConfig.multiRepoMinDirs}`);
   console.log(`explore.scan.perRepoMaxFiles: ${scanConfig.perRepoMaxFiles}`);
+  console.log(`explore.scan.ignoreDirs: ${scanConfig.ignoreDirs.join(', ')}`);
+  console.log(`explore.scan.honorGitignore: ${scanConfig.honorGitignore}`);
 }
 
 function setConfigValue(key: string, value: string): void {
@@ -335,6 +337,44 @@ function setConfigValue(key: string, value: string): void {
       }
       configManager.setExploreScanConfig({ perRepoMaxFiles: Math.floor(parsed) });
       console.log('Explore scan perRepoMaxFiles saved.');
+      break;
+    }
+    case 'explore.scan.ignoredirs':
+    case 'explore.scan.ignore-dirs':
+    case 'explorescanignoredirs':
+    case 'explore-scan-ignore-dirs': {
+      let ignoreDirs: string[];
+      const trimmed = value.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
+            exitWithError('explore.scan.ignoreDirs must be a JSON array of strings.');
+          }
+          ignoreDirs = parsed.map((item: string) => item.trim()).filter((item: string) => item.length > 0);
+        } catch {
+          exitWithError('explore.scan.ignoreDirs must be valid JSON array or comma-separated directory names.');
+        }
+      } else {
+        ignoreDirs = trimmed.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
+      }
+      if (ignoreDirs.length === 0) {
+        exitWithError('explore.scan.ignoreDirs must include at least one directory name.');
+      }
+      configManager.setExploreScanConfig({ ignoreDirs });
+      console.log('Explore scan ignoreDirs saved.');
+      break;
+    }
+    case 'explore.scan.honorgitignore':
+    case 'explore.scan.honor-gitignore':
+    case 'explorescanhonorgitignore':
+    case 'explore-scan-honor-gitignore': {
+      const normalized = value.trim().toLowerCase();
+      if (normalized !== 'true' && normalized !== 'false') {
+        exitWithError('explore.scan.honorGitignore must be "true" or "false".');
+      }
+      configManager.setExploreScanConfig({ honorGitignore: normalized === 'true' });
+      console.log('Explore scan honorGitignore saved.');
       break;
     }
     default:
@@ -598,7 +638,7 @@ configCommand
 
 configCommand
   .command('set <key> <value>')
-  .description('Set a config value: apikey, baseurl, model, theme, extraRequest, seeyonChatApiKey, seeyonChatEndpoint, explore.rerank.* (model, apikey, baseurl, topN, perRole, timeoutMs, instruct), explore.thinking.* (worker, synthesis), explore.adaptive.* (minHighPriorityFiles, minDeclarationEvidence, maxLowSignalRatio), or explore.scan.* (maxFiles, recentFirst, multiRepoMinDirs, perRepoMaxFiles)')
+  .description('Set a config value: apikey, baseurl, model, theme, extraRequest, seeyonChatApiKey, seeyonChatEndpoint, explore.rerank.* (model, apikey, baseurl, topN, perRole, timeoutMs, instruct), explore.thinking.* (worker, synthesis), explore.adaptive.* (minHighPriorityFiles, minDeclarationEvidence, maxLowSignalRatio), or explore.scan.* (maxFiles, recentFirst, multiRepoMinDirs, perRepoMaxFiles, ignoreDirs, honorGitignore)')
   .action((key: string, value: string) => {
     setConfigValue(key, value);
   });

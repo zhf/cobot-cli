@@ -36,6 +36,7 @@ export async function runPrompt(
   outputMode?: 'text' | 'ndjson',
 ): Promise<void> {
   const useNdjson = outputMode === 'ndjson';
+  let ndjsonResultEmitted = false;
 
   try {
     // Create agent (API key will be checked on first message)
@@ -96,8 +97,6 @@ export async function runPrompt(
     process.exit(1);
   }
 }
-
-let ndjsonResultEmitted = false;
 
 function emitNdjson(data: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(data) + '\n');
