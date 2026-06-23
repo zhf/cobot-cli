@@ -68,6 +68,17 @@ cobot --yolo
 cobot run --yolo "fix the build"
 ```
 
+Run parallel read-only codebase exploration:
+```bash
+cobot --agent explore
+cobot run --agent explore "find where request payloads are assembled"
+```
+
+Stream structured progress events for machine consumption:
+```bash
+cobot run --agent explore --output ndjson "find where request payloads are assembled"
+```
+
 Resume the latest saved interactive session:
 ```bash
 cobot resume
@@ -116,6 +127,21 @@ Options:
   -s, --system <message>           Custom system message
   -d, --debug                      Enable debug logging to debug-agent.log in current directory
   -p, --prompt <prompt>            Run in non-interactive mode with a predefined prompt
+  -h, --help                       display help for command
+```
+
+The `run` subcommand additionally accepts `-o, --output <mode>`:
+```bash
+cobot run [options] [prompt...]
+
+Options:
+  -a, --agent <agent>              Coding agent to use
+  --yolo                           Use the approval-free yolo coding agent
+  -m, --model <model>              AI model to use for generation
+  -t, --temperature <temperature>  Temperature for generation
+  -s, --system <message>           Custom system message
+  -d, --debug                      Enable debug logging to debug-agent.log in current directory
+  -o, --output <mode>              Output format: text (default) or ndjson
   -h, --help                       display help for command
 ```
 
@@ -306,6 +332,7 @@ You can specify the model to use either through the `/model` command during chat
 - Tool execution approval system for potentially dangerous operations
 - Session auto-approval toggle (Tab on empty input)
 - YOLO mode (`--yolo` or `/yolo`) for approval-free tool execution
+- Explore agent (`--agent explore` or `/agent explore`) for parallel read-only codebase search with automatic skill injection
 - Coding agent cycling with Shift+Tab
 - Command execution safety limits (no long-running processes)
 - Secure storage of API keys with restrictive file permissions
@@ -315,6 +342,73 @@ You can specify the model to use either through the `/model` command during chat
 Interactive chat sessions are stored locally in `~/.cobot/sessions.sqlite` using Bun SQLite. Starting `cobot` always creates a fresh session by default. Use `cobot resume` to open the latest saved session, `cobot resume <id-or-prefix>` to open a specific saved session, or `/resume` from inside chat to continue the most recent previous session.
 
 Saved sessions include the assistant context, visible transcript, input history, model, temperature, and token statistics. The first user message automatically becomes the session title unless you provide one with `/new [title]`.
+
+### Structured Output (NDJSON Streaming)
+
+`cobot run --output ndjson` emits newline-delimited JSON events to stdout, allowing caller processes to consume progress and results in a customized format. Each line is a self-contained JSON object with a `type` field.
+
+#### Event Types
+
+| `type` | Description | Fields |
+|--------|-------------|--------|
+| `progress` | Explore pipeline stage update | `phase`, `round`, `totalRounds`, `workersCompleted`, `totalWorkers`, `rerankCandidates`, `adaptiveSkipped`, `fileCount`, `evidenceCount`, `skillsLoaded` |
+| `tool` | Tool execution (non-explore agents) | `name`, `status` (`started` or `completed`) |
+| `result` | Final answer | `content` |
+| `error` | Error | `message` |
+
+#### Progress Phases (explore agent)
+
+| `phase` | Description |
+|---------|-------------|
+| `skills` | Auto-loading matching skills (harness-side activation) |
+| `scanning` | Collecting source files and local evidence |
+| `reranking` | Reranking evidence candidates |
+| `workers` | Running parallel worker LLM calls |
+| `adaptive-check` | Evaluating whether round 2 can be skipped |
+| `fast-path` | Deterministic fast path (exact filename matches) |
+| `synthesis` | Final synthesis LLM call |
+| `validation` | Validating cited paths against local files |
+
+#### Example Output
+
+```
+{"type":"progress","phase":"scanning","round":0,"totalRounds":2}
+{"type":"progress","phase":"scanning","round":0,"totalRounds":2,"fileCount":111}
+{"type":"progress","phase":"scanning","round":1,"totalRounds":2}
+{"type":"progress","phase":"reranking","round":1,"rerankCandidates":32}
+{"type":"progress","phase":"workers","round":1,"totalRounds":2,"totalWorkers":3,"workersCompleted":0}
+{"type":"progress","phase":"workers","round":1,"totalRounds":2,"totalWorkers":3,"workersCompleted":1}
+{"type":"progress","phase":"workers","round":1,"totalRounds":2,"totalWorkers":3,"workersCompleted":2}
+{"type":"progress","phase":"workers","round":1,"totalRounds":2,"totalWorkers":3,"workersCompleted":3}
+{"type":"progress","phase":"adaptive-check","round":1,"totalRounds":2,"adaptiveSkipped":false}
+{"type":"progress","phase":"scanning","round":2,"totalRounds":2}
+{"type":"progress","phase":"reranking","round":2,"rerankCandidates":32}
+{"type":"progress","phase":"workers","round":2,"totalRounds":2,"totalWorkers":3,"workersCompleted":0}
+{"type":"progress","phase":"workers","round":2,"totalRounds":2,"totalWorkers":3,"workersCompleted":3}
+{"type":"progress","phase":"synthesis"}
+{"type":"progress","phase":"validation"}
+{"type":"result","content":"## Likely Files\n\n- **`src/db.ts`** ..."}
+```
+
+#### Consuming From a Caller Process
+
+```bash
+# Pipe to jq and print only progress phases
+cobot run --agent explore --output ndjson "how does auth work?" | jq -r 'select(.type=="progress") | .phase'
+
+# Show a live progress counter while waiting for the result
+cobot run --agent explore --output ndjson "how does auth work?" | while read line; do
+  type=$(echo "$line" | jq -r '.type')
+  if [ "$type" = "progress" ]; then
+    echo -ne "\r$(echo "$line" | jq -r '.phase')..."
+  elif [ "$type" = "result" ]; then
+    echo -e "\n"
+    echo "$line" | jq -r '.content'
+  fi
+done
+```
+
+The default output mode is `text` (plain text to stdout, unchanged behavior).
 
 ### Configuration Storage
 
