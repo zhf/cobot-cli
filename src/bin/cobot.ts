@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { resumeChat, startChat } from '../cli/startChat.js';
 import { runPrompt } from '../cli/runPrompt.js';
 import { buildPromptWithStdin } from '../cli/promptInput.js';
-import ConfigManager from '../config/ConfigManager.js';
+import ConfigManager, { ExploreThinkingMode, ExploreAdaptiveConfig } from '../config/ConfigManager.js';
 import { SeeyonChatClient, SeeyonChatError } from '../core/seeyon-chat.js';
 import { writeProjectContext } from '../utils/context/projectContext.js';
 import { formatCodingAgentList, loadCodingAgents, resolveCodingAgent, YOLO_AGENT_NAME } from '../core/coding-agents.js';
@@ -21,6 +21,11 @@ interface GlobalOptions {
 interface RunOptions {
   agent?: string;
   yolo?: boolean;
+  model?: string;
+  temperature?: number;
+  system?: string;
+  debug?: boolean;
+  output?: 'text' | 'ndjson';
 }
 
 function getGlobalOptions(): GlobalOptions {
@@ -62,19 +67,28 @@ async function runPromptCommand(prompt: string): Promise<void> {
     options.system || null,
     options.debug,
     resolveAgentOption(options),
+    'text',
   );
 }
 
-async function runPromptCommandWithAgent(prompt: string, codingAgentName?: string, yolo?: boolean): Promise<void> {
-  const options = getGlobalOptions();
+async function runPromptCommandWithRunOptions(prompt: string, runOptions: RunOptions): Promise<void> {
+  const globalOptions = getGlobalOptions();
+  const model = runOptions.model || globalOptions.model;
+  const temperature = runOptions.temperature ?? globalOptions.temperature;
+  const system = runOptions.system || globalOptions.system || null;
+  const debug = runOptions.debug || globalOptions.debug;
+  const outputMode = runOptions.output || 'text';
+  const agent = runOptions.agent || globalOptions.agent;
+  const yolo = runOptions.yolo || globalOptions.yolo;
 
   await runPrompt(
     prompt,
-    options.model,
-    options.temperature,
-    options.system || null,
-    options.debug,
-    resolveAgentOption(options, codingAgentName, yolo),
+    model,
+    temperature,
+    system,
+    debug,
+    resolveAgentOption({ ...globalOptions, agent, yolo }, agent, yolo),
+    outputMode,
   );
 }
 
@@ -90,6 +104,30 @@ function printConfig(): void {
   console.log(`extraRequest: ${configManager.getExtraRequestString() || 'not set'}`);
   console.log(`seeyonChatApiKey: ${maskSecret(configManager.getSeeyonChatApiKey())}`);
   console.log(`seeyonChatEndpoint: ${configManager.getSeeyonChatEndpoint()}`);
+  const rerankConfig = configManager.getExploreRerankConfig();
+  if (rerankConfig) {
+    console.log(`explore.rerank.model: ${rerankConfig.model}`);
+    console.log(`explore.rerank.apiKey: ${maskSecret(rerankConfig.apiKey || null)}`);
+    console.log(`explore.rerank.baseURL: ${rerankConfig.baseURL}`);
+    console.log(`explore.rerank.topN: ${rerankConfig.topN}`);
+    console.log(`explore.rerank.perRole: ${rerankConfig.perRole}`);
+    console.log(`explore.rerank.timeoutMs: ${rerankConfig.timeoutMs}`);
+    console.log(`explore.rerank.instruct: ${rerankConfig.instruct}`);
+  } else {
+    console.log('explore.rerank: not set');
+  }
+  const thinkingConfig = configManager.getExploreThinkingConfig();
+  console.log(`explore.thinking.worker: ${thinkingConfig.worker}`);
+  console.log(`explore.thinking.synthesis: ${thinkingConfig.synthesis}`);
+  const adaptiveConfig = configManager.getExploreAdaptiveConfig();
+  console.log(`explore.adaptive.minHighPriorityFiles: ${adaptiveConfig.minHighPriorityFiles}`);
+  console.log(`explore.adaptive.minDeclarationEvidence: ${adaptiveConfig.minDeclarationEvidence}`);
+  console.log(`explore.adaptive.maxLowSignalRatio: ${adaptiveConfig.maxLowSignalRatio}`);
+  const scanConfig = configManager.getExploreScanConfig();
+  console.log(`explore.scan.maxFiles: ${scanConfig.maxFiles}`);
+  console.log(`explore.scan.recentFirst: ${scanConfig.recentFirst}`);
+  console.log(`explore.scan.multiRepoMinDirs: ${scanConfig.multiRepoMinDirs}`);
+  console.log(`explore.scan.perRepoMaxFiles: ${scanConfig.perRepoMaxFiles}`);
 }
 
 function setConfigValue(key: string, value: string): void {
@@ -138,9 +176,174 @@ function setConfigValue(key: string, value: string): void {
       configManager.setSeeyonChatEndpoint(value);
       console.log('Seeyon Chat endpoint saved.');
       break;
+    case 'explore.rerank.model':
+    case 'explorererankmodel':
+    case 'explore-rerank-model':
+      configManager.setExploreRerankConfig({ model: value });
+      console.log('Explore rerank model saved.');
+      break;
+    case 'explore.rerank.apikey':
+    case 'explore.rerank.api-key':
+    case 'explorererankapikey':
+    case 'explore-rerank-api-key':
+      configManager.setExploreRerankConfig({ apiKey: value });
+      console.log('Explore rerank API key saved.');
+      break;
+    case 'explore.rerank.baseurl':
+    case 'explore.rerank.base-url':
+    case 'explorererankbaseurl':
+    case 'explore-rerank-base-url':
+      configManager.setExploreRerankConfig({ baseURL: value });
+      console.log('Explore rerank base URL saved.');
+      break;
+    case 'explore.rerank.topn':
+    case 'explorereranktopn':
+    case 'explore-rerank-top-n': {
+      const parsedTopN = Number(value);
+      if (!Number.isFinite(parsedTopN) || parsedTopN <= 0) {
+        exitWithError('explore.rerank.topN must be a positive number.');
+      }
+      configManager.setExploreRerankConfig({ topN: Math.floor(parsedTopN) });
+      console.log('Explore rerank topN saved.');
+      break;
+    }
+    case 'explore.rerank.perrole':
+    case 'explorererankperrole':
+    case 'explore-rerank-per-role': {
+      const parsedPerRole = Number(value);
+      if (!Number.isFinite(parsedPerRole) || parsedPerRole <= 0) {
+        exitWithError('explore.rerank.perRole must be a positive number.');
+      }
+      configManager.setExploreRerankConfig({ perRole: Math.floor(parsedPerRole) });
+      console.log('Explore rerank perRole saved.');
+      break;
+    }
+    case 'explore.rerank.timeoutms':
+    case 'explorereranktimeoutms':
+    case 'explore-rerank-timeout-ms': {
+      const parsedTimeout = Number(value);
+      if (!Number.isFinite(parsedTimeout) || parsedTimeout <= 0) {
+        exitWithError('explore.rerank.timeoutMs must be a positive number.');
+      }
+      configManager.setExploreRerankConfig({ timeoutMs: Math.floor(parsedTimeout) });
+      console.log('Explore rerank timeoutMs saved.');
+      break;
+    }
+    case 'explore.rerank.instruct':
+    case 'explorererankinstruct':
+    case 'explore-rerank-instruct':
+      configManager.setExploreRerankConfig({ instruct: value });
+      console.log('Explore rerank instruct saved.');
+      break;
+    case 'explore.thinking.worker':
+    case 'explorethinkingworker':
+    case 'explore-thinking-worker':
+      if (!isExploreThinkingMode(value)) {
+        exitWithError('explore.thinking.worker must be "default" or "disabled".');
+      }
+      configManager.setExploreThinkingConfig({ worker: value as ExploreThinkingMode });
+      console.log('Explore thinking worker mode saved.');
+      break;
+    case 'explore.thinking.synthesis':
+    case 'explorethinkingsynthesis':
+    case 'explore-thinking-synthesis':
+      if (!isExploreThinkingMode(value)) {
+        exitWithError('explore.thinking.synthesis must be "default" or "disabled".');
+      }
+      configManager.setExploreThinkingConfig({ synthesis: value as ExploreThinkingMode });
+      console.log('Explore thinking synthesis mode saved.');
+      break;
+    case 'explore.adaptive.minHighPriorityFiles':
+    case 'exploreadaptive.minhighpriorityfiles':
+    case 'explore-adaptive-min-high-priority-files':
+    case 'explore.adaptive.minhighpriorityfiles': {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        exitWithError('explore.adaptive.minHighPriorityFiles must be a non-negative number.');
+      }
+      configManager.setExploreAdaptiveConfig({ minHighPriorityFiles: Math.floor(parsed) });
+      console.log('Explore adaptive minHighPriorityFiles saved.');
+      break;
+    }
+    case 'explore.adaptive.minDeclarationEvidence':
+    case 'exploreadaptive.mindeclarationevidence':
+    case 'explore-adaptive-min-declaration-evidence':
+    case 'explore.adaptive.mindeclarationevidence': {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        exitWithError('explore.adaptive.minDeclarationEvidence must be a non-negative number.');
+      }
+      configManager.setExploreAdaptiveConfig({ minDeclarationEvidence: Math.floor(parsed) });
+      console.log('Explore adaptive minDeclarationEvidence saved.');
+      break;
+    }
+    case 'explore.adaptive.maxLowSignalRatio':
+    case 'exploreadaptive.maxlowsignalratio':
+    case 'explore-adaptive-max-low-signal-ratio':
+    case 'explore.adaptive.maxlowsignalratio': {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+        exitWithError('explore.adaptive.maxLowSignalRatio must be a number between 0 and 1.');
+      }
+      configManager.setExploreAdaptiveConfig({ maxLowSignalRatio: parsed });
+      console.log('Explore adaptive maxLowSignalRatio saved.');
+      break;
+    }
+    case 'explore.scan.maxfiles':
+    case 'explore.scan.max-files':
+    case 'explorescanmaxfiles':
+    case 'explore-scan-max-files': {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        exitWithError('explore.scan.maxFiles must be a positive number.');
+      }
+      configManager.setExploreScanConfig({ maxFiles: Math.floor(parsed) });
+      console.log('Explore scan maxFiles saved.');
+      break;
+    }
+    case 'explore.scan.recentfirst':
+    case 'explore.scan.recent-first':
+    case 'explorescanrecentfirst':
+    case 'explore-scan-recent-first': {
+      const normalized = value.trim().toLowerCase();
+      if (normalized !== 'true' && normalized !== 'false') {
+        exitWithError('explore.scan.recentFirst must be "true" or "false".');
+      }
+      configManager.setExploreScanConfig({ recentFirst: normalized === 'true' });
+      console.log('Explore scan recentFirst saved.');
+      break;
+    }
+    case 'explore.scan.multirepomindirs':
+    case 'explore.scan.multi-repo-min-dirs':
+    case 'explorescanmultirepomindirs':
+    case 'explore-scan-multi-repo-min-dirs': {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        exitWithError('explore.scan.multiRepoMinDirs must be a positive number.');
+      }
+      configManager.setExploreScanConfig({ multiRepoMinDirs: Math.floor(parsed) });
+      console.log('Explore scan multiRepoMinDirs saved.');
+      break;
+    }
+    case 'explore.scan.perrepomaxfiles':
+    case 'explore.scan.per-repo-max-files':
+    case 'explorescanperrepomaxfiles':
+    case 'explore-scan-per-repo-max-files': {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        exitWithError('explore.scan.perRepoMaxFiles must be a positive number.');
+      }
+      configManager.setExploreScanConfig({ perRepoMaxFiles: Math.floor(parsed) });
+      console.log('Explore scan perRepoMaxFiles saved.');
+      break;
+    }
     default:
       exitWithError(`Unknown config key: ${key}`);
   }
+}
+
+function isExploreThinkingMode(value: string): value is ExploreThinkingMode {
+  return value === 'default' || value === 'disabled';
 }
 
 function clearConfigValue(key: string): void {
@@ -176,6 +379,30 @@ function clearConfigValue(key: string): void {
     case 'seeyon-chat-endpoint':
       configManager.clearSeeyonChatEndpoint();
       console.log('Seeyon Chat endpoint cleared.');
+      break;
+    case 'explore.rerank':
+    case 'explore-rerank':
+    case 'explorererank':
+      configManager.clearExploreRerankConfig();
+      console.log('Explore rerank config cleared.');
+      break;
+    case 'explore.thinking':
+    case 'explore-thinking':
+    case 'explorethinking':
+      configManager.clearExploreThinkingConfig();
+      console.log('Explore thinking config cleared.');
+      break;
+    case 'explore.adaptive':
+    case 'explore-adaptive':
+    case 'exploreadaptive':
+      configManager.clearExploreAdaptiveConfig();
+      console.log('Explore adaptive config cleared.');
+      break;
+    case 'explore.scan':
+    case 'explore-scan':
+    case 'explorescan':
+      configManager.clearExploreScanConfig();
+      console.log('Explore scan config cleared.');
       break;
     default:
       exitWithError(`Cannot clear config key: ${key}`);
@@ -312,6 +539,11 @@ program
   .description('Run in non-interactive mode with a prompt')
   .option('-a, --agent <agent>', 'Coding agent to use')
   .option('--yolo', 'Use the approval-free yolo coding agent')
+  .option('-m, --model <model>', 'AI model to use for generation')
+  .option('-t, --temperature <temperature>', 'Temperature for generation', parseFloat)
+  .option('-s, --system <message>', 'Custom system message')
+  .option('-d, --debug', 'Enable debug logging to debug-agent.log in current directory')
+  .option('-o, --output <mode>', 'Output format: text (default) or ndjson (structured machine-readable output for piping)')
   .action(async (promptParts: string[], commandOptions: RunOptions) => {
     const prompt = await buildPromptWithStdin(promptParts.join(' '));
 
@@ -319,12 +551,17 @@ program
       exitWithError('Provide a prompt argument or pipe input to stdin.');
     }
 
-    await runPromptCommandWithAgent(prompt, commandOptions.agent, commandOptions.yolo);
+    if (commandOptions.output && commandOptions.output !== 'text' && commandOptions.output !== 'ndjson') {
+      exitWithError(`Invalid output mode: ${commandOptions.output}. Use "text" or "ndjson".`);
+    }
+
+    await runPromptCommandWithRunOptions(prompt, commandOptions);
   });
 
 program
   .command('resume [sessionRef]')
   .description('Resume the latest saved chat session, or a specific session by id/prefix')
+  .option('-d, --debug', 'Enable debug logging to debug-agent.log in current directory')
   .action(async (sessionRef: string | undefined) => {
     const options = getGlobalOptions();
 
@@ -361,14 +598,14 @@ configCommand
 
 configCommand
   .command('set <key> <value>')
-  .description('Set a config value: apikey, baseurl, model, theme, extraRequest, seeyonChatApiKey, or seeyonChatEndpoint')
+  .description('Set a config value: apikey, baseurl, model, theme, extraRequest, seeyonChatApiKey, seeyonChatEndpoint, explore.rerank.* (model, apikey, baseurl, topN, perRole, timeoutMs, instruct), explore.thinking.* (worker, synthesis), explore.adaptive.* (minHighPriorityFiles, minDeclarationEvidence, maxLowSignalRatio), or explore.scan.* (maxFiles, recentFirst, multiRepoMinDirs, perRepoMaxFiles)')
   .action((key: string, value: string) => {
     setConfigValue(key, value);
   });
 
 configCommand
   .command('clear <key>')
-  .description('Clear a config value: apikey, baseurl, extraRequest, seeyonChatApiKey, or seeyonChatEndpoint')
+  .description('Clear a config value: apikey, baseurl, extraRequest, seeyonChatApiKey, seeyonChatEndpoint, explore.rerank, explore.thinking, explore.adaptive, or explore.scan')
   .action((key: string) => {
     clearConfigValue(key);
   });
