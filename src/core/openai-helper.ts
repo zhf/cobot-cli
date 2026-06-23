@@ -12,6 +12,7 @@ export interface ChatCompletionOptions {
   stream?: boolean;
   stream_options?: OpenAI.Chat.Completions.ChatCompletionStreamOptions;
   signal?: AbortSignal;
+  extraBody?: Record<string, unknown>;
 }
 
 export function getTokenLimitOption(model: string, maxTokens: number): Record<string, number> {
@@ -30,10 +31,12 @@ export function buildChatCompletionPayload(options: ChatCompletionOptions): Reco
     tool_choice,
     stream = false,
     stream_options,
+    extraBody,
   } = options;
   const configManager = new ConfigManager();
   const completionOptions: Record<string, unknown> = {
     ...configManager.getExtraRequest(),
+    ...(extraBody || {}),
     model,
     messages,
     temperature,

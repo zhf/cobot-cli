@@ -37,10 +37,12 @@ interface MarkdownAgentData extends CodingAgentConfig {
 }
 
 const DEFAULT_BUILD_DESCRIPTION = 'Default coding agent with normal tool access and approval prompts.';
+const DEFAULT_EXPLORE_DESCRIPTION = 'Read-only parallel codebase exploration agent for finding relevant files and evidence.';
 const DEFAULT_PLAN_DESCRIPTION = 'Read-only planning agent for analysis without file or command changes.';
 const DEFAULT_YOLO_DESCRIPTION = 'Approval-free coding agent that allows all tools without prompts.';
 const AGENT_DIRECTORY_NAME = 'agents';
 
+export const EXPLORE_AGENT_NAME = 'explore';
 export const YOLO_AGENT_NAME = 'yolo';
 
 const TOOL_PERMISSIONS: Record<string, PermissionKey> = {
@@ -88,6 +90,18 @@ const PLAN_PERMISSIONS: Required<PermissionConfig> = {
   database: 'deny',
   media: 'deny',
   web: 'ask',
+  interaction: 'allow',
+  skill: 'allow',
+};
+
+const EXPLORE_PERMISSIONS: Required<PermissionConfig> = {
+  read: 'allow',
+  edit: 'deny',
+  bash: 'deny',
+  task: 'allow',
+  database: 'deny',
+  media: 'deny',
+  web: 'deny',
   interaction: 'allow',
   skill: 'allow',
 };
@@ -196,6 +210,19 @@ function builtInAgents(): Record<string, CodingAgentInfo> {
       description: DEFAULT_BUILD_DESCRIPTION,
       mode: 'primary',
       permission: clonePermissions(DEFAULT_PERMISSIONS),
+      native: true,
+    },
+    [EXPLORE_AGENT_NAME]: {
+      name: EXPLORE_AGENT_NAME,
+      description: DEFAULT_EXPLORE_DESCRIPTION,
+      mode: 'primary',
+      prompt: [
+        'You are a read-only codebase exploration coordinator.',
+        'For codebase search requests, use the internal parallel exploration workflow to find likely files, evidence, dead ends, and next steps.',
+        'Do not modify files, run shell commands, access the web, or use external systems.',
+        'Prefer evidence-backed paths and line references over broad guesses.',
+      ].join('\n'),
+      permission: clonePermissions(EXPLORE_PERMISSIONS),
       native: true,
     },
     plan: {

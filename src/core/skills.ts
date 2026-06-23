@@ -40,10 +40,14 @@ function listSkillFiles(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => {
       const entryPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
+      // Follow symlinks: fs.Dirent.isDirectory() returns false for symlinks,
+      // so use fs.statSync to check the resolved target.
+      const isDir = entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(entryPath).isDirectory());
+      if (isDir) {
         return listSkillFiles(entryPath);
       }
-      return entry.isFile() && entry.name === SKILL_FILE_NAME ? [entryPath] : [];
+      const isFile = entry.isFile() || (entry.isSymbolicLink() && fs.statSync(entryPath).isFile());
+      return isFile && entry.name === SKILL_FILE_NAME ? [entryPath] : [];
     });
 }
 
@@ -201,4 +205,104 @@ export function sampleSkillFiles(skill: SkillInfo): string[] {
 
   visit(skillDir);
   return files;
+}
+
+/**
+ * Stop words that should not count as skill-matching terms.
+ * Includes generic words like "skill" that appear in many skill descriptions
+ * but don't help discriminate between them.
+ */
+const SKILL_MATCH_STOP_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these',
+  'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which',
+  'who', 'when', 'where', 'why', 'how', 'all', 'each', 'every', 'both',
+  'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not',
+  'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'also',
+  'and', 'or', 'but', 'if', 'while', 'about', 'for', 'with', 'from',
+  'into', 'onto', 'upon', 'use', 'using', 'used', 'task', 'tasks',
+  'help', 'need', 'please', 'want', 'like',
+  'skill', 'skills', 'agent', 'agents', 'plugin', 'plugins',
+  'code', 'coding', 'development', 'best', 'practices',
+]);
+
+/**
+ * Extract significant terms from a skill description for matching against user prompts.
+ * Returns unique lowercase terms with stop words removed.
+ */
+function extractSkillTerms(description: string): string[] {
+  return [...new Set(
+    description
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length >= 3 && !SKILL_MATCH_STOP_WORDS.has(word))
+  )];
+}
+
+/**
+ * Find skills whose descriptions share significant terms with the user prompt.
+ * Uses term overlap matching — if enough significant terms from a skill's
+ * description appear in the prompt, the skill is considered relevant.
+ *
+ * This is a harness-side heuristic for agents that cannot use model-driven
+ * skill activation (e.g., the explore agent which bypasses the tool loop).
+ */
+export function findMatchingSkillsForPrompt(prompt: string, skills: SkillInfo[]): SkillInfo[] {
+  const promptLower = prompt.toLowerCase();
+  const promptWords = new Set(promptLower.split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
+
+  return skills.filter((skill) => {
+    if (!skill.description) {
+      return false;
+    }
+
+    const skillTerms = extractSkillTerms(skill.description);
+    if (skillTerms.length === 0) {
+      return false;
+    }
+
+    const matchedTerms = skillTerms.filter((term) => promptWords.has(term) || promptLower.includes(term));
+    // Require at least 2 significant term matches, or 1 match if the skill has very few terms.
+    const threshold = skillTerms.length <= 3 ? 1 : 2;
+    return matchedTerms.length >= threshold;
+  });
+}
+
+/**
+ * Build a structured context string from matching skills for injection into
+ * the explore agent's conversation context. Follows the structured wrapping
+ * convention from the Agent Skills specification.
+ */
+export function buildSkillContextForExplore(matchedSkills: SkillInfo[]): string | undefined {
+  if (matchedSkills.length === 0) {
+    return undefined;
+  }
+
+  const blocks = matchedSkills.map((skill) => {
+    const skillDir = path.dirname(skill.location);
+    const resourceFiles = sampleSkillFiles(skill).map((f) => `  <file>${path.relative(skillDir, f)}</file>`).join('\n');
+
+    return [
+      `<skill_content name="${skill.name}">`,
+      `# Skill: ${skill.name}`,
+      '',
+      skill.content.trim(),
+      '',
+      `Skill directory: ${skillDir}`,
+      'Relative paths in this skill are relative to the skill directory.',
+      '',
+      '<skill_resources>',
+      resourceFiles || '  (no bundled resources)',
+      '</skill_resources>',
+      '</skill_content>',
+    ].join('\n');
+  });
+
+  return [
+    'The following skills have been automatically loaded because they match your task.',
+    'Follow their instructions when relevant to the exploration.',
+    '',
+    blocks.join('\n\n'),
+  ].join('\n');
 }

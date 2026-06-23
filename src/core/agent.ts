@@ -11,13 +11,15 @@ import { debugLog, setDebugLoggingEnabled } from './logger.js';
 import { buildChatCompletionPayload, createStreamingChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
 import { QuestionAnswer, QuestionPrompt } from '../tools/question.js';
-import { skillDescriptionSuffix, skillSystemPrompt } from './skills.js';
+import { buildSkillContextForExplore, findMatchingSkillsForPrompt, listSkills, skillDescriptionSuffix, skillSystemPrompt } from './skills.js';
 import {
   CodingAgentInfo,
+  EXPLORE_AGENT_NAME,
   getToolPermissionAction,
   loadCodingAgents,
   resolveCodingAgent,
 } from './coding-agents.js';
+import { runParallelExplore, type ExploreProgressEvent } from './explore-runner.js';
 
 
 
@@ -71,6 +73,8 @@ export class Agent {
     total_tokens: number;
     total_time?: number;
   }) => void;
+
+  private onExploreProgress?: (event: ExploreProgressEvent) => void;
 
   private onError?: (error: string) => Promise<boolean>;
 
@@ -240,6 +244,7 @@ ${skills ? `\n${skills}\n` : ''}
     onStreamUpdate?: (messageId: string, content: string, reasoning?: string) => void;
     onMaxIterations?: (maxIterations: number) => Promise<boolean>;
     onApiUsage?: (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; total_time?: number }) => void;
+    onExploreProgress?: (event: ExploreProgressEvent) => void;
     onError?: (error: string) => Promise<boolean>;
   }) {
     this.onToolStart = callbacks.onToolStart;
@@ -252,6 +257,7 @@ ${skills ? `\n${skills}\n` : ''}
     this.onStreamUpdate = callbacks.onStreamUpdate;
     this.onMaxIterations = callbacks.onMaxIterations;
     this.onApiUsage = callbacks.onApiUsage;
+    this.onExploreProgress = callbacks.onExploreProgress;
     this.onError = callbacks.onError;
   }
 
@@ -562,6 +568,61 @@ ${skills ? `\n${skills}\n` : ''}
     });
   }
 
+  private async chatWithParallelExplore(userInput: string): Promise<void> {
+    if (!this.client) {
+      throw new Error('OpenAI client not initialized');
+    }
+
+    this.currentAbortController = new AbortController();
+    if (this.onThinkingText) {
+      this.onThinkingText('Exploring with parallel read-only workers...');
+    }
+
+    // Harness-side skill activation: since the explore agent bypasses the tool loop,
+    // the model cannot call the skill tool. Instead, find skills whose descriptions
+    // match the user prompt and inject their instructions into the explore context.
+    let skillContext: string | undefined;
+    let skillNames: string[] | undefined;
+    const allSkills = listSkills(this.configManager.getSkillsConfig());
+    if (allSkills.length > 0) {
+      const matchedSkills = findMatchingSkillsForPrompt(userInput, allSkills);
+      if (matchedSkills.length > 0) {
+        skillContext = buildSkillContextForExplore(matchedSkills);
+        skillNames = matchedSkills.map((s) => s.name);
+        debugLog(`Explore: auto-loaded ${matchedSkills.length} skill(s): ${skillNames.join(', ')}`);
+      }
+    }
+
+    const result = await runParallelExplore({
+      client: this.client,
+      model: this.model,
+      temperature: this.temperature,
+      messages: this.messages,
+      userInput,
+      signal: this.currentAbortController.signal,
+      shouldStop: () => this.isInterrupted,
+      onApiUsage: this.onApiUsage,
+      onProgress: this.onExploreProgress,
+      skillContext,
+      skillNames,
+    });
+
+    this.currentAbortController = null;
+
+    if (this.isInterrupted) {
+      return;
+    }
+
+    if (this.onFinalMessage) {
+      this.onFinalMessage(result.content);
+    }
+
+    this.messages.push({
+      role: 'assistant',
+      content: result.content,
+    });
+  }
+
   async chat(userInput: string): Promise<void> {
     // Reset interrupt flag at the start of a new chat
     this.isInterrupted = false;
@@ -616,6 +677,11 @@ ${skills ? `\n${skills}\n` : ''}
           // Check client exists
           if (!this.client) {
             throw new Error('OpenAI client not initialized');
+          }
+
+          if (this.codingAgent.name === EXPLORE_AGENT_NAME) {
+            await this.chatWithParallelExplore(userInput);
+            return;
           }
 
           debugLog('Making API call to OpenAI with model:', this.model);
