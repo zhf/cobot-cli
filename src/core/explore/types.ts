@@ -1,6 +1,6 @@
 import type OpenAI from 'openai';
 import type { Message } from '../messages.js';
-import type { ExploreRerankConfig, ExploreThinkingConfig, ExploreAdaptiveConfig, ExploreScanConfig } from '../../config/ConfigManager.js';
+import type { ExploreRerankConfig, ExploreThinkingConfig, ExploreAdaptiveConfig, ExploreScanConfig, ExploreDelegationConfig } from '../../config/ConfigManager.js';
 
 export interface ExploreWorkerFocus {
 	name: string;
@@ -90,6 +90,7 @@ export interface ExploreOptions {
 	thinkingPlan: ThinkingPlan;
 	adaptiveConfig: ExploreAdaptiveConfig;
 	scanConfig: Required<ExploreScanConfig>;
+	delegationConfig: Required<ExploreDelegationConfig>;
 }
 
 export interface CollectSourceFilesResult {
@@ -125,6 +126,7 @@ export interface AdaptiveRound2Decision {
 export type ExploreProgressPhase =
 	| 'scanning'
 	| 'reranking'
+	| 'delegation'
 	| 'workers'
 	| 'adaptive-check'
 	| 'synthesis'
@@ -152,6 +154,10 @@ export interface ExploreProgressEvent {
 	workersCompleted?: number;
 	totalWorkers?: number;
 	workerName?: string;
+	selectedWorkers?: string[];
+	delegationMode?: string;
+	delegationStrategy?: string;
+	delegationReasons?: string[];
 	rerankCandidates?: number;
 	rerankSelected?: number;
 	rerankLatencyMs?: number;

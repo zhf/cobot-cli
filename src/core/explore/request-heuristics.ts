@@ -7,7 +7,6 @@ import {
 	FAST_PATH_MIN_EXACT_FILES,
 	FAST_PATH_MIN_EXACT_MATCHES,
 	MAX_TERMS_PER_ROUND,
-	WORKER_FOCI,
 } from './constants.js';
 import type { AdaptiveRound2Decision, ExploreAdaptiveGate, ExploreWorkerResult, SharedEvidence } from './types.js';
 import { compareMatchesForEvidence, mergeEvidenceFiles } from './evidence.js';
@@ -142,7 +141,7 @@ export function evaluateAdaptiveRound2(
 	}
 
 	let workerPassed = true;
-	for (const entry of ledger.slice(-WORKER_FOCI.length)) {
+	for (const entry of ledger.filter((item) => item.round === 1)) {
 		if (entry.parsed && typeof entry.parsed === 'object') {
 			const parsed = entry.parsed as Record<string, unknown>;
 			const deadEnds = stringArrayField(parsed.dead_ends);
@@ -207,6 +206,17 @@ export function shouldUseDeterministicFastPath(userInput: string, evidenceHistor
 	return exactFilePaths.size >= FAST_PATH_MIN_EXACT_FILES && exactMatches >= FAST_PATH_MIN_EXACT_MATCHES;
 }
 
+const EXPLORE_PIPELINE_PHASE_TERMS = [
+	'scanning',
+	'reranking',
+	'rerank',
+	'workers',
+	'adaptive',
+	'synthesis',
+	'validation',
+	'delegation',
+];
+
 export function isBroadArchitectureRequest(value: string): boolean {
 	const lowerValue = value.toLowerCase();
 	const asksForFlow = /\b(trace|flow|path|wiring|startup|lifecycle|call\s+chain|control\s+flow|data\s+flow)\b/.test(lowerValue);
@@ -216,11 +226,21 @@ export function isBroadArchitectureRequest(value: string): boolean {
 		&& /(?:\band\b.+\band\b|\bclasses\b|\bfiles\b|\bpath and line evidence\b)/.test(lowerValue);
 	const asksForImplementation = /\bhow\s+(?:is|are|does|do)\b/.test(lowerValue)
 		&& /\b(?:implemented|implement(?:s|ation)?|provision(?:s|ed|ing)?|wired|works?|load(?:s|ed|ing)?)\b/.test(lowerValue);
+	const asksForEndToEnd = /\b(end[\s-]to[\s-]end|through the codebase|full pipeline)\b/.test(lowerValue);
+	const asksForMultipleExplorePhases = EXPLORE_PIPELINE_PHASE_TERMS
+		.filter((term) => lowerValue.includes(term))
+		.length >= 2;
+	const asksForPipelineTrace = asksForFlow
+		&& /\b(scanning|workers?|synthesis|rerank(?:ing)?|adaptive)\b/.test(lowerValue);
 
 	return (asksForFlow && (asksForResolution || asksForArchitecturePieces))
 		|| (asksForResolution && asksForArchitecturePieces)
 		|| asksForMultipleEvidenceKinds
-		|| (asksForImplementation && asksForArchitecturePieces);
+		|| (asksForImplementation && asksForArchitecturePieces)
+		|| asksForEndToEnd
+		|| asksForMultipleExplorePhases
+		|| asksForPipelineTrace
+		|| (asksForImplementation && asksForFlow);
 }
 
 export function extractDeterministicFollowUpSearchTerms(userInput: string, evidenceHistory: SharedEvidence[]): string[] {
@@ -290,7 +310,7 @@ export function stripSearchMetadataLines(value: string): string {
 		.trim();
 }
 
-export function extractFollowUpSearchTerms(userInput: string, ledger: ExploreWorkerResult[], evidenceHistory: SharedEvidence[]): string[] {
+export function extractFollowUpSearchTerms(userInput: string, ledger: ExploreWorkerResult[], evidenceHistory: SharedEvidence[], round = 1): string[] {
 	const terms = [
 		...extractStructuredTerms(userInput),
 		...extractFileLikeTerms(userInput),
@@ -300,7 +320,7 @@ export function extractFollowUpSearchTerms(userInput: string, ledger: ExploreWor
 		...extractKeyboardTerms(userInput),
 	];
 
-	for (const entry of ledger.slice(-WORKER_FOCI.length)) {
+	for (const entry of ledger.filter((item) => item.round === round)) {
 		terms.push(...extractStructuredTerms(entry.content));
 		terms.push(...extractQuotedTerms(entry.content));
 		if (entry.parsed && typeof entry.parsed === 'object') {
