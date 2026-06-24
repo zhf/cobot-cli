@@ -26,6 +26,7 @@ interface RunOptions {
   system?: string;
   debug?: boolean;
   output?: 'text' | 'ndjson';
+  cwd?: string;
 }
 
 function getGlobalOptions(): GlobalOptions {
@@ -81,6 +82,10 @@ async function runPromptCommandWithRunOptions(prompt: string, runOptions: RunOpt
   const agent = runOptions.agent || globalOptions.agent;
   const yolo = runOptions.yolo || globalOptions.yolo;
 
+  if (runOptions.cwd) {
+    process.chdir(runOptions.cwd);
+  }
+
   await runPrompt(
     prompt,
     model,
@@ -130,6 +135,8 @@ function printConfig(): void {
   console.log(`explore.scan.perRepoMaxFiles: ${scanConfig.perRepoMaxFiles}`);
   console.log(`explore.scan.ignoreDirs: ${scanConfig.ignoreDirs.join(', ')}`);
   console.log(`explore.scan.honorGitignore: ${scanConfig.honorGitignore}`);
+  const delegationConfig = configManager.getExploreDelegationConfig();
+  console.log(`explore.delegation.mode: ${delegationConfig.mode}`);
 }
 
 function setConfigValue(key: string, value: string): void {
@@ -377,6 +384,15 @@ function setConfigValue(key: string, value: string): void {
       console.log('Explore scan honorGitignore saved.');
       break;
     }
+    case 'explore.delegation.mode':
+    case 'exploredelegationmode':
+    case 'explore-delegation-mode':
+      if (value !== 'hardcoded' && value !== 'adaptive') {
+        exitWithError('explore.delegation.mode must be "hardcoded" or "adaptive".');
+      }
+      configManager.setExploreDelegationConfig({ mode: value as 'hardcoded' | 'adaptive' });
+      console.log('Explore delegation mode saved.');
+      break;
     default:
       exitWithError(`Unknown config key: ${key}`);
   }
@@ -443,6 +459,12 @@ function clearConfigValue(key: string): void {
     case 'explorescan':
       configManager.clearExploreScanConfig();
       console.log('Explore scan config cleared.');
+      break;
+    case 'explore.delegation':
+    case 'explore-delegation':
+    case 'exploredelegation':
+      configManager.clearExploreDelegationConfig();
+      console.log('Explore delegation config cleared.');
       break;
     default:
       exitWithError(`Cannot clear config key: ${key}`);
@@ -584,6 +606,7 @@ program
   .option('-s, --system <message>', 'Custom system message')
   .option('-d, --debug', 'Enable debug logging to debug-agent.log in current directory')
   .option('-o, --output <mode>', 'Output format: text (default) or ndjson (structured machine-readable output for piping)')
+  .option('--cwd <path>', 'Working directory for the agent run')
   .action(async (promptParts: string[], commandOptions: RunOptions) => {
     const prompt = await buildPromptWithStdin(promptParts.join(' '));
 

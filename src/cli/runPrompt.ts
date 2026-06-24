@@ -42,6 +42,12 @@ export async function runPrompt(
     // Create agent (API key will be checked on first message)
     const agent = await Agent.create(model, temperature, system, debug, codingAgentName);
 
+    const handleSignal = () => {
+      agent.interrupt();
+    };
+    process.once('SIGINT', handleSignal);
+    process.once('SIGTERM', handleSignal);
+
     // Set up simple callbacks to handle the agent's responses
     agent.setToolCallbacks({
       onFinalMessage: (content: string) => {
@@ -83,6 +89,9 @@ export async function runPrompt(
 
     // Run the agent with the provided prompt
     await agent.chat(prompt);
+
+    process.removeListener('SIGINT', handleSignal);
+    process.removeListener('SIGTERM', handleSignal);
 
     // For ndjson mode, if no onFinalMessage was called (shouldn't happen, but safety net)
     if (useNdjson && !ndjsonResultEmitted) {
