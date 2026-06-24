@@ -2,10 +2,10 @@ import { debugLog } from '../logger.js';
 import {
 	EXPLORE_ROUNDS,
 	MAX_RERANK_CANDIDATES,
-	WORKER_FOCI,
 } from './constants.js';
 import { ExploreProgressTracker } from './progress.js';
 import type {
+	AdaptiveRound2Decision,
 	ExploreWorkerResult,
 	ParallelExploreResult,
 	RunParallelExploreOptions,
@@ -37,6 +37,7 @@ import {
 import { extractRootNoiseTerms, filterNoiseTerms } from './terms.js';
 import { collectSourceFiles } from './scan.js';
 import { validateCitedPathsWithMeta } from './validation.js';
+import { planWorkerDelegation, workerNamesForRound } from './worker-delegation.js';
 
 function topEvidenceFilePaths(evidence: SharedEvidence, limit = 8): string[] {
 	return evidence.files.slice(0, limit).map((file) => file.filePath);
@@ -100,6 +101,7 @@ export async function runParallelExplore(options: RunParallelExploreOptions): Pr
 	let rerankSkipAnnounced = false;
 
 	let rounds = EXPLORE_ROUNDS;
+	let pendingRound2Adaptive: AdaptiveRound2Decision | undefined;
 	for (let round = 1; round <= rounds; round++) {
 		if (options.shouldStop?.()) {
 			break;
@@ -215,47 +217,87 @@ export async function runParallelExplore(options: RunParallelExploreOptions): Pr
 		const ledgerSummary = formatLedgerForPrompt(ledger);
 		const evidenceSummary = formatEvidenceForPrompt(evidence);
 		progress.start({
-			phase: 'workers',
+			phase: 'delegation',
 			round,
 			totalRounds: rounds,
-			totalWorkers: WORKER_FOCI.length,
-			workersCompleted: 0,
+			delegationMode: exploreOptions.delegationConfig.mode,
+			message: 'Planning worker lanes from prompt signals.',
+		});
+		const delegationPlan = planWorkerDelegation({
+			mode: exploreOptions.delegationConfig.mode,
+			userInput: searchInput,
+			round,
+			broadArchitecture: broadArchitectureRequest,
+			round1WorkerNames: round > 1 ? workerNamesForRound(ledger, 1) : undefined,
+			adaptiveGates: round > 1 ? pendingRound2Adaptive?.gates : undefined,
+			adaptiveReasons: round > 1 ? pendingRound2Adaptive?.reasons : undefined,
+		});
+		const selectedWorkerNames = delegationPlan.workers.map((worker) => worker.name);
+		progress.complete({
+			phase: 'delegation',
+			round,
+			totalRounds: rounds,
+			delegationMode: exploreOptions.delegationConfig.mode,
+			delegationStrategy: delegationPlan.strategy,
+			delegationReasons: delegationPlan.reasons,
+			selectedWorkers: selectedWorkerNames,
+			totalWorkers: delegationPlan.workers.length,
+			message: delegationPlan.workers.length > 0
+				? `Selected ${delegationPlan.workers.length} worker lane(s): ${selectedWorkerNames.join(', ')}.`
+				: 'No new worker lanes needed for this round.',
 		});
 
-		const roundResults: ExploreWorkerResult[] = [];
-		let workersCompleted = 0;
-		const workerPromises = WORKER_FOCI.map((worker) => runExploreWorker({
-			...options,
-			context,
-			worker,
-			round,
-			ledgerSummary,
-			evidenceSummary,
-			thinkingPlan: exploreOptions.thinkingPlan,
-		}).then((result) => {
-			workersCompleted++;
-			progress.event({
+		if (delegationPlan.workers.length === 0) {
+			progress.skipped({
 				phase: 'workers',
-				status: 'completed',
+				round,
+				skipReason: 'round 2 reuses round 1 worker ledger; no new lanes selected',
+			});
+		} else {
+			progress.start({
+				phase: 'workers',
 				round,
 				totalRounds: rounds,
-				totalWorkers: WORKER_FOCI.length,
-				workersCompleted,
-				workerName: worker.name,
+				totalWorkers: delegationPlan.workers.length,
+				selectedWorkers: selectedWorkerNames,
+				workersCompleted: 0,
 			});
-			return result;
-		}));
-		const results = await Promise.all(workerPromises);
-		roundResults.push(...results);
-		ledger.push(...roundResults);
-		progress.complete({
-			phase: 'workers',
-			round,
-			totalRounds: rounds,
-			totalWorkers: WORKER_FOCI.length,
-			workersCompleted: WORKER_FOCI.length,
-			message: `Completed ${WORKER_FOCI.length} worker lane(s).`,
-		});
+
+			const roundResults: ExploreWorkerResult[] = [];
+			let workersCompleted = 0;
+			const workerPromises = delegationPlan.workers.map((worker) => runExploreWorker({
+				...options,
+				context,
+				worker,
+				round,
+				ledgerSummary,
+				evidenceSummary,
+				thinkingPlan: exploreOptions.thinkingPlan,
+			}).then((result) => {
+				workersCompleted++;
+				progress.event({
+					phase: 'workers',
+					status: 'completed',
+					round,
+					totalRounds: rounds,
+					totalWorkers: delegationPlan.workers.length,
+					workersCompleted,
+					workerName: worker.name,
+				});
+				return result;
+			}));
+			const results = await Promise.all(workerPromises);
+			roundResults.push(...results);
+			ledger.push(...roundResults);
+			progress.complete({
+				phase: 'workers',
+				round,
+				totalRounds: rounds,
+				totalWorkers: delegationPlan.workers.length,
+				workersCompleted: delegationPlan.workers.length,
+				message: `Completed ${delegationPlan.workers.length} worker lane(s).`,
+			});
+		}
 
 		if (round === 1 && rounds > 1) {
 			progress.start({ phase: 'adaptive-check', round, totalRounds: rounds });
@@ -273,6 +315,7 @@ export async function runParallelExplore(options: RunParallelExploreOptions): Pr
 				rounds = 1;
 				break;
 			}
+			pendingRound2Adaptive = adaptiveDecision;
 			progress.complete({
 				phase: 'adaptive-check',
 				round,
@@ -284,7 +327,7 @@ export async function runParallelExplore(options: RunParallelExploreOptions): Pr
 			});
 		}
 
-		terms = filterNoiseTerms(extractFollowUpSearchTerms(searchInput, ledger, evidenceHistory), rootNoiseTerms);
+		terms = filterNoiseTerms(extractFollowUpSearchTerms(searchInput, ledger, evidenceHistory, round), rootNoiseTerms);
 		if (terms.length === 0) {
 			debugLog(`Explore: stopping after round ${round} — no follow-up terms.`);
 			break;
