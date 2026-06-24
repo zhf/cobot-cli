@@ -36,11 +36,18 @@ export interface ExploreScanConfig {
   honorGitignore?: boolean;
 }
 
+export type ExploreDelegationMode = 'hardcoded' | 'adaptive';
+
+export interface ExploreDelegationConfig {
+  mode?: ExploreDelegationMode;
+}
+
 interface ExploreConfig {
   rerank?: ExploreRerankConfig;
   thinking?: ExploreThinkingConfig;
   adaptive?: ExploreAdaptiveConfig;
   scan?: ExploreScanConfig;
+  delegation?: ExploreDelegationConfig;
 }
 
 interface Config {
@@ -77,6 +84,7 @@ const DEFAULT_SCAN_IGNORE_DIRS = [
   '.cache', 'coverage', 'target', '.turbo', '.parcel-cache',
 ];
 const DEFAULT_SCAN_HONOR_GITIGNORE = true;
+const DEFAULT_DELEGATION_MODE: ExploreDelegationMode = 'adaptive';
 
 const CONFIG_DIRECTORY_NAME = '.cobot'; // In home directory
 const CONFIG_FILE_NAME = 'config.json';
@@ -257,12 +265,13 @@ class ConfigManager {
     if (fileConfig.extraRequest) mergedConfig.extraRequest = fileConfig.extraRequest;
     if (fileConfig.seeyonChatApiKey) mergedConfig.seeyonChatApiKey = fileConfig.seeyonChatApiKey;
     if (fileConfig.seeyonChatEndpoint) mergedConfig.seeyonChatEndpoint = fileConfig.seeyonChatEndpoint;
-    if (fileConfig.explore?.rerank || fileConfig.explore?.thinking || fileConfig.explore?.adaptive || fileConfig.explore?.scan) {
+    if (fileConfig.explore?.rerank || fileConfig.explore?.thinking || fileConfig.explore?.adaptive || fileConfig.explore?.scan || fileConfig.explore?.delegation) {
       mergedConfig.explore = {
         ...(fileConfig.explore.rerank ? { rerank: { ...fileConfig.explore.rerank } } : {}),
         ...(fileConfig.explore.thinking ? { thinking: { ...fileConfig.explore.thinking } } : {}),
         ...(fileConfig.explore.adaptive ? { adaptive: { ...fileConfig.explore.adaptive } } : {}),
         ...(fileConfig.explore.scan ? { scan: { ...fileConfig.explore.scan } } : {}),
+        ...(fileConfig.explore.delegation ? { delegation: { ...fileConfig.explore.delegation } } : {}),
       };
     }
     
@@ -417,6 +426,18 @@ class ConfigManager {
       mergedConfig.explore = {
         ...(mergedConfig.explore || {}),
         scan: scanEnv,
+      };
+    }
+
+    const delegationEnv: ExploreDelegationConfig = { ...(mergedConfig.explore?.delegation || {}) };
+    const delegationModeEnv = process.env.COBOT_EXPLORE_DELEGATION_MODE;
+    if (!delegationEnv.mode && (delegationModeEnv === 'hardcoded' || delegationModeEnv === 'adaptive')) {
+      delegationEnv.mode = delegationModeEnv;
+    }
+    if (Object.keys(delegationEnv).length > 0) {
+      mergedConfig.explore = {
+        ...(mergedConfig.explore || {}),
+        delegation: delegationEnv,
       };
     }
     
@@ -861,6 +882,50 @@ class ConfigManager {
       }
     } catch (error) {
       console.warn('Failed to clear explore scan config:', error);
+    }
+  }
+
+  public getExploreDelegationConfig(): Required<ExploreDelegationConfig> {
+    const config = this.getConfig();
+    const delegation = config.explore?.delegation;
+    return {
+      mode: delegation?.mode === 'hardcoded' ? 'hardcoded' : DEFAULT_DELEGATION_MODE,
+    };
+  }
+
+  public setExploreDelegationConfig(partial: ExploreDelegationConfig): void {
+    try {
+      const config = this.readConfigFromFile();
+      const existing = config.explore?.delegation || {};
+      config.explore = {
+        ...(config.explore || {}),
+        delegation: { ...existing, ...partial },
+      };
+      this.writeConfigToFile(config);
+    } catch (error) {
+      throw new Error(`Failed to save explore delegation config: ${error}`);
+    }
+  }
+
+  public clearExploreDelegationConfig(): void {
+    try {
+      const config = this.readConfigFromFile();
+      if (config.explore) {
+        delete config.explore.delegation;
+        if (Object.keys(config.explore).length === 0) {
+          delete config.explore;
+        }
+      }
+
+      if (Object.keys(config).length === 0) {
+        if (fs.existsSync(this.configPath)) {
+          fs.unlinkSync(this.configPath);
+        }
+      } else {
+        this.writeConfigToFile(config);
+      }
+    } catch (error) {
+      console.warn('Failed to clear explore delegation config:', error);
     }
   }
 }
