@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitignoreFilter } from '../utils/gitignore.js';
 import { ToolResult, createToolResponse } from './files.js';
+import { resolveWorkspaceFile, WorkspacePathError } from './workspace-path.js';
 
 // Helper interfaces for search results
 interface SearchMatch {
@@ -38,7 +39,13 @@ export async function searchFiles(
   groupByFile: boolean = false,
 ): Promise<ToolResult> {
   try {
-    const searchDir = path.resolve(directory);
+    let searchDir: string;
+    try {
+      searchDir = resolveWorkspaceFile(directory);
+    } catch (error) {
+      const message = error instanceof WorkspacePathError ? error.message : 'Invalid search directory';
+      return createToolResponse(false, undefined, '', `Error: ${message}`);
+    }
 
     // Check if directory exists
     const exists = await fs.promises.access(searchDir).then(() => true).catch(() => false);

@@ -2,6 +2,7 @@ import * as path from 'path';
 import { glob as globFiles } from 'glob';
 import { getGitignoreFilter } from '../utils/gitignore.js';
 import { ToolResult, createToolResponse } from './files.js';
+import { resolveWorkspaceFile, WorkspacePathError } from './workspace-path.js';
 
 const MAX_RESULTS = 100;
 
@@ -11,7 +12,13 @@ export async function glob(pattern: string, searchPath: string = '.'): Promise<T
       return createToolResponse(false, undefined, '', 'Error: pattern is required');
     }
 
-    const cwd = path.resolve(searchPath || '.');
+    let cwd: string;
+    try {
+      cwd = resolveWorkspaceFile(searchPath || '.');
+    } catch (error) {
+      const message = error instanceof WorkspacePathError ? error.message : 'Invalid search path';
+      return createToolResponse(false, undefined, '', `Error: ${message}`);
+    }
     const gitignore = getGitignoreFilter(cwd);
     const matches = await globFiles(pattern, {
       cwd,

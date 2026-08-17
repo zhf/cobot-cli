@@ -1,9 +1,10 @@
 import { ToolCall } from './messages.js';
-import { ToolResult } from '../tools/registry.js';
+import { ToolResult } from '../tools/files.js';
 import { hasFileBeenReadBeforeEdit, getReadBeforeEditErrorMessage } from '../tools/validators.js';
-import { executeTool } from '../tools/registry.js';
 import { CodingAgentInfo, getToolPermissionAction } from './coding-agents.js';
 import { QuestionAnswer, QuestionPrompt, formatQuestionResult, validateQuestions } from '../tools/question.js';
+import { isMCPToolName } from '../mcp/tools.js';
+import { LocalToolBackend, type ToolBackend } from '../tools/backend.js';
 
 export interface ToolExecutorCallbacks {
   onToolStart?: (name: string, args: Record<string, unknown>) => void;
@@ -19,6 +20,7 @@ export interface ToolExecutorOptions {
   sessionAutoApprove: boolean;
   isInterrupted: boolean;
   codingAgent: CodingAgentInfo;
+  toolBackend?: ToolBackend;
 }
 
 export async function executeToolCall(
@@ -144,12 +146,13 @@ export async function executeToolCall(
       return result;
     }
 
-    // Execute tool
-    const result = await executeTool(toolName, toolArguments);
+    const backend = options.toolBackend ?? new LocalToolBackend();
+    const result = await backend.execute(toolName, toolArguments);
 
-    // Notify UI about tool completion
+    // Notify UI about tool completion (omit large vision payloads from display)
     if (callbacks.onToolEnd) {
-      callbacks.onToolEnd(toolName, result);
+      const { visionImage: _v, ...displayResult } = result as unknown as Record<string, unknown>;
+      callbacks.onToolEnd(toolName, displayResult);
     }
 
     return result;

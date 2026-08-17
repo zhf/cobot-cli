@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { Agent } from '../core/agent.js';
 import { QuestionPrompt } from '../tools/question.js';
 import type { ExploreProgressEvent } from '../core/explore-runner.js';
+import { getMCPManager } from '../mcp/client.js';
 
 function answerQuestion(question: QuestionPrompt): string[] {
   const firstOption = question.options[0]?.label;
@@ -93,10 +94,14 @@ export async function runPrompt(
     process.removeListener('SIGINT', handleSignal);
     process.removeListener('SIGTERM', handleSignal);
 
-    // For ndjson mode, if no onFinalMessage was called (shouldn't happen, but safety net)
-    if (useNdjson && !ndjsonResultEmitted) {
-      process.exit(0);
+    try {
+      await getMCPManager().shutdown();
+    } catch {
+      // Ignore shutdown errors so the run result still exits cleanly.
     }
+
+    // Always exit after a non-interactive run so MCP stdio children cannot keep the process alive.
+    process.exit(0);
   } catch (error) {
     if (useNdjson) {
       emitNdjson({ type: 'error', message: error instanceof Error ? error.message : String(error) });

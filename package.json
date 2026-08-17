@@ -8,23 +8,37 @@
 		"packages/*"
 	],
 	"bin": {
-		"cobot": "dist/bin/cobot.js"
+		"cobot": "dist/bin/cobot.js",
+		"cobot-tool-worker": "dist/bin/tool-worker.js"
 	},
 	"type": "module",
 	"engines": {
-		"bun": ">=1.2.22"
+		"bun": ">=1.2.22",
+		"node": ">=22.19.0"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./tool-worker": {
+			"types": "./dist/bin/tool-worker.d.ts",
+			"import": "./dist/bin/tool-worker.js"
+		}
 	},
 	"scripts": {
 		"build": "tsc",
 		"build:executables": "bun scripts/build-executables.ts",
 		"dev": "tsc --watch",
 		"start": "bun dist/bin/cobot.js",
+		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},
 	"files": [
 		"dist"
 	],
 	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.17.0",
 		"chalk": "^5.4.1",
 		"commander": "^14.0.0",
 		"dotenv": "^17.2.2",

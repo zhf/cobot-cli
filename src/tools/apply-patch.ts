@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ToolResult, createToolResponse } from './files.js';
+import { resolveWorkspaceFile } from './workspace-path.js';
 
 type PatchOperation = 'add' | 'update' | 'delete';
 
@@ -20,12 +21,7 @@ interface FileChange {
 }
 
 function resolveProjectPath(filePath: string): string {
-  const root = path.resolve(process.cwd());
-  const target = path.resolve(root, filePath);
-  if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
-    throw new Error(`Cannot modify files outside the project directory: ${filePath}`);
-  }
-  return target;
+  return resolveWorkspaceFile(filePath);
 }
 
 function parsePatch(patchText: string): PatchSection[] {

@@ -4,6 +4,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { writeFileContent, createDirectoryWithParents, generateDirectoryTreeDisplay, deleteFileOrDirectory, shouldFileOrDirectoryBeIgnored } from '../utils/file-ops.js';
 import { getReadFilesTracker } from './registry.js';
+import { resolveWorkspaceFile, WorkspacePathError } from './workspace-path.js';
 
 const execAsync = promisify(exec);
 
@@ -39,12 +40,25 @@ export function createToolResponse(success: boolean, data?: any, message: string
   return response;
 }
 
+function jailOrError(filePath: string): string | ToolResult {
+  try {
+    return resolveWorkspaceFile(filePath);
+  } catch (error) {
+    const message = error instanceof WorkspacePathError ? error.message : 'Invalid workspace path';
+    return createToolResponse(false, undefined, '', `Error: ${message}`);
+  }
+}
+
 /**
  * Read the contents of a file, optionally specifying line range
  */
 export async function readFile(filePath: string, startLine?: number, endLine?: number): Promise<ToolResult> {
   try {
-    const resolvedPath = path.resolve(filePath);
+    const jailed = jailOrError(filePath);
+    if (typeof jailed !== 'string') {
+      return jailed;
+    }
+    const resolvedPath = jailed;
     const sessionReadFiles = getReadFilesTracker();
 
     // Check if file exists
@@ -105,7 +119,11 @@ export async function readFile(filePath: string, startLine?: number, endLine?: n
  */
 export async function createFile(filePath: string, content: string, targetType: string = 'file', overwrite: boolean = false): Promise<ToolResult> {
   try {
-    const targetPath = path.resolve(filePath);
+    const jailed = jailOrError(filePath);
+    if (typeof jailed !== 'string') {
+      return jailed;
+    }
+    const targetPath = jailed;
 
     // Check if file exists and handle overwrite
     const exists = await fs.promises.access(targetPath).then(() => true).catch(() => false);
@@ -138,7 +156,11 @@ export async function createFile(filePath: string, content: string, targetType: 
  */
 export async function editFile(filePath: string, targetText: string, replacementText: string, replaceAll: boolean = false): Promise<ToolResult> {
   try {
-    const resolvedPath = path.resolve(filePath);
+    const jailed = jailOrError(filePath);
+    if (typeof jailed !== 'string') {
+      return jailed;
+    }
+    const resolvedPath = jailed;
 
     // Read current content (validation already confirmed file exists and was read)
     const originalContent = await fs.promises.readFile(resolvedPath, 'utf-8');
@@ -169,17 +191,16 @@ export async function editFile(filePath: string, targetText: string, replacement
  */
 export async function deleteFile(filePath: string, recursive: boolean = false): Promise<ToolResult> {
   try {
-    const targetPath = path.resolve(filePath);
+    const jailed = jailOrError(filePath);
+    if (typeof jailed !== 'string') {
+      return jailed;
+    }
+    const targetPath = jailed;
     const currentWorkingDir = path.resolve(process.cwd());
 
     // Safety check 1: Never delete the root directory itself
     if (targetPath === currentWorkingDir) {
       return createToolResponse(false, undefined, '', 'Error: Cannot delete the root project directory');
-    }
-
-    // Safety check 2: Never delete anything outside the current working directory
-    if (!targetPath.startsWith(currentWorkingDir)) {
-      return createToolResponse(false, undefined, '', 'Error: Cannot delete files outside the project directory');
     }
 
     const exists = await fs.promises.access(targetPath).then(() => true).catch(() => false);
@@ -215,7 +236,11 @@ export async function deleteFile(filePath: string, recursive: boolean = false): 
  */
 export async function listFiles(directory: string = '.', pattern: string = '*', recursive: boolean = false, showHidden: boolean = false): Promise<ToolResult> {
   try {
-    const dirPath = path.resolve(directory);
+    const jailed = jailOrError(directory);
+    if (typeof jailed !== 'string') {
+      return jailed;
+    }
+    const dirPath = jailed;
 
     const exists = await fs.promises.access(dirPath).then(() => true).catch(() => false);
     if (!exists) {
@@ -228,7 +253,7 @@ export async function listFiles(directory: string = '.', pattern: string = '*', 
     }
 
     // Get tree display output
-    const treeOutput = await generateDirectoryTreeDisplay(directory, pattern, recursive, showHidden);
+    const treeOutput = await generateDirectoryTreeDisplay(dirPath, pattern, recursive, showHidden);
 
     return createToolResponse(true, treeOutput, `Listed ${directory}`);
   } catch (error) {
@@ -241,7 +266,11 @@ export async function listFiles(directory: string = '.', pattern: string = '*', 
  */
 export async function openFile(filePath: string, withApp?: string): Promise<ToolResult> {
   try {
-    const resolvedPath = path.resolve(filePath);
+    const jailed = jailOrError(filePath);
+    if (typeof jailed !== 'string') {
+      return jailed;
+    }
+    const resolvedPath = jailed;
 
     // Check if file/directory exists
     const exists = await fs.promises.access(resolvedPath).then(() => true).catch(() => false);

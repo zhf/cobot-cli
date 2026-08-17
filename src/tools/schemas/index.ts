@@ -22,7 +22,7 @@ export const OPEN_FILE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: 'open_file',
-    description: 'Open file or directory with the OS default application. On macOS uses `open` command, on Windows uses `start`, on Linux uses `xdg-open`. Example: {"file_path": "document.pdf"} or {"file_path": "src"}',
+    description: 'Open file or directory with the OS default application for the USER to view locally (Preview, Finder, etc). Do NOT use this to inspect or describe images yourself—local image paths in the user message are already attached as vision input. Example: {"file_path": "document.pdf"} or {"file_path": "src"}',
     parameters: {
       type: 'object',
       properties: {

@@ -1,4 +1,5 @@
 import type { Message } from '../messages.js';
+import { messageContentToString } from '../messages.js';
 import {
 	MAX_CONTEXT_CHARS,
 	MAX_EVIDENCE_CHARS,
@@ -123,11 +124,11 @@ export function selectDisplayEvidenceFiles(files: EvidenceFile[], userInput: str
 export function formatConversationContext(messages: Message[], skillContext?: string): string {
 	const systemMessages = messages
 		.filter((message) => message.role === 'system')
-		.map((message) => `system: ${message.content}`);
+		.map((message) => `system: ${messageContentToString(message.content)}`);
 	const recentMessages = messages
 		.filter((message) => message.role !== 'system' && message.role !== 'tool')
 		.slice(-8)
-		.map((message) => `${message.role}: ${message.content}`);
+		.map((message) => `${message.role}: ${messageContentToString(message.content)}`);
 
 	const parts = [...systemMessages, ...recentMessages];
 	if (skillContext) {

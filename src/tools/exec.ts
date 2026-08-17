@@ -1,8 +1,8 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { ToolResult, createToolResponse } from './files.js';
+import { getWorkspaceRoot, resolveWorkspaceFile, WorkspacePathError } from './workspace-path.js';
 
 const execAsync = promisify(exec);
 
@@ -16,39 +16,37 @@ export async function executeCommand(command: string, executionType: string, wor
       return createToolResponse(false, undefined, '', 'Error: Invalid command_type');
     }
 
-    let originalWorkingDirectory: string | undefined;
+    let cwd: string;
+    try {
+      cwd = workingDirectory ? resolveWorkspaceFile(workingDirectory) : getWorkspaceRoot();
+    } catch (error) {
+      const message = error instanceof WorkspacePathError ? error.message : 'Invalid working directory';
+      return createToolResponse(false, undefined, '', `Error: ${message}`);
+    }
+
     if (workingDirectory) {
-      const wdPath = path.resolve(workingDirectory);
-      const exists = await fs.promises.access(wdPath).then(() => true).catch(() => false);
-      if (!exists) {
+      try {
+        await fs.promises.access(cwd);
+      } catch {
         return createToolResponse(false, undefined, '', 'Error: Working directory not found');
       }
-      originalWorkingDirectory = process.cwd();
-      process.chdir(workingDirectory);
     }
 
-    try {
-      let commandToExecute: string;
-      if (executionType === 'python') {
-        commandToExecute = `python -c "${command.replace(/"/g, '\\"')}"`;
-      } else {
-        commandToExecute = command;
-      }
-
-      const { stdout, stderr } = await execAsync(commandToExecute, { timeout });
-      const success = true; // If no error was thrown, consider it successful
-
-      return createToolResponse(
-        success,
-        `stdout: ${stdout}\nstderr: ${stderr}`,
-        'Command executed successfully',
-      );
-    } finally {
-      // Restore original working directory
-      if (originalWorkingDirectory) {
-        process.chdir(originalWorkingDirectory);
-      }
+    let commandToExecute: string;
+    if (executionType === 'python') {
+      commandToExecute = `python -c "${command.replace(/"/g, '\\"')}"`;
+    } else {
+      commandToExecute = command;
     }
+
+    const { stdout, stderr } = await execAsync(commandToExecute, { timeout, cwd });
+    const success = true; // If no error was thrown, consider it successful
+
+    return createToolResponse(
+      success,
+      `stdout: ${stdout}\nstderr: ${stderr}`,
+      'Command executed successfully',
+    );
   } catch (error: any) {
     const isTimeout = error.killed && error.signal === 'SIGTERM';
     if (isTimeout) {

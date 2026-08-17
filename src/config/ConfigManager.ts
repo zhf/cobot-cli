@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { CodingAgentConfig } from '../core/coding-agents.js';
 import type { SkillConfig } from '../core/skills.js';
+import type { MCPServerConfig } from '../mcp/client.js';
 
 export interface ExploreRerankConfig {
   model?: string;
@@ -64,6 +65,7 @@ interface Config {
   seeyonChatApiKey?: string;
   seeyonChatEndpoint?: string;
   explore?: ExploreConfig;
+  mcpServers?: Record<string, MCPServerConfig>;
 }
 
 const DEFAULT_RERANK_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-api/v1/reranks';
@@ -223,8 +225,8 @@ function expandConfig(config: Config): Config {
 class ConfigManager {
   private configPath: string;
 
-  constructor() {
-    const homeDir = os.homedir();
+  constructor(configDir?: string) {
+    const homeDir = configDir ?? os.homedir();
     this.configPath = path.join(homeDir, CONFIG_DIRECTORY_NAME, CONFIG_FILE_NAME);
   }
 
@@ -265,6 +267,7 @@ class ConfigManager {
     if (fileConfig.extraRequest) mergedConfig.extraRequest = fileConfig.extraRequest;
     if (fileConfig.seeyonChatApiKey) mergedConfig.seeyonChatApiKey = fileConfig.seeyonChatApiKey;
     if (fileConfig.seeyonChatEndpoint) mergedConfig.seeyonChatEndpoint = fileConfig.seeyonChatEndpoint;
+    if (fileConfig.mcpServers) mergedConfig.mcpServers = fileConfig.mcpServers;
     if (fileConfig.explore?.rerank || fileConfig.explore?.thinking || fileConfig.explore?.adaptive || fileConfig.explore?.scan || fileConfig.explore?.delegation) {
       mergedConfig.explore = {
         ...(fileConfig.explore.rerank ? { rerank: { ...fileConfig.explore.rerank } } : {}),
@@ -479,6 +482,36 @@ class ConfigManager {
       fs.chmodSync(this.configPath, 0o600);
     } catch {
       // noop (esp. on Windows where chmod may not be supported)
+    }
+  }
+
+  public getMCPServersRecord(): Record<string, MCPServerConfig> {
+    const config = this.readConfigFromFile();
+    return { ...(config.mcpServers || {}) };
+  }
+
+  public getMCPServers(): MCPServerConfig[] {
+    return Object.values(this.getMCPServersRecord());
+  }
+
+  public setMCPServers(mcpServers: Record<string, MCPServerConfig>): void {
+    try {
+      const config = this.readConfigFromFile();
+      if (Object.keys(mcpServers).length === 0) {
+        delete config.mcpServers;
+      } else {
+        config.mcpServers = mcpServers;
+      }
+
+      if (Object.keys(config).length === 0) {
+        if (fs.existsSync(this.configPath)) {
+          fs.unlinkSync(this.configPath);
+        }
+      } else {
+        this.writeConfigToFile(config);
+      }
+    } catch (error) {
+      throw new Error(`Failed to save MCP servers: ${error}`);
     }
   }
 

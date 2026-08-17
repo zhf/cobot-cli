@@ -4,6 +4,7 @@ import type { ExploreScanConfig } from '../../config/ConfigManager.js';
 import { GitignoreFilter } from '../../utils/gitignore.js';
 import { MAX_SOURCE_FILE_BYTES, TEXT_EXTENSIONS, TEXT_FILENAMES } from './constants.js';
 import type { CollectSourceFilesResult, SourceFile, VisitContext } from './types.js';
+import { resolveWorkspaceFile } from '../../tools/workspace-path.js';
 
 export function shouldSkipDirectory(name: string, ignoreDirs: Set<string> | string[]): boolean {
 	const ignoreSet = ignoreDirs instanceof Set ? ignoreDirs : new Set(ignoreDirs);
@@ -19,21 +20,22 @@ export function isLikelyTextFile(name: string): boolean {
 }
 
 export async function collectSourceFiles(root: string, scanConfig: Required<ExploreScanConfig>): Promise<CollectSourceFilesResult> {
+	const jailedRoot = resolveWorkspaceFile(root);
 	const files: SourceFile[] = [];
 	const ignoreDirs = new Set(scanConfig.ignoreDirs);
-	const gitignore = scanConfig.honorGitignore ? new GitignoreFilter(root) : null;
-	const topEntries = await readDirectoryEntries(root);
+	const gitignore = scanConfig.honorGitignore ? new GitignoreFilter(jailedRoot) : null;
+	const topEntries = await readDirectoryEntries(jailedRoot);
 	const topDirs = topEntries.filter((entry) => entry.isDirectory() && !shouldSkipDirectory(entry.name, ignoreDirs));
 	const useMultiRepoScan = scanConfig.recentFirst && topDirs.length >= scanConfig.multiRepoMinDirs;
 
 	if (useMultiRepoScan) {
 		const reposScanned: string[] = [];
-		const sortedDirs = await sortDirectoryEntriesByMtime(root, topDirs);
+		const sortedDirs = await sortDirectoryEntriesByMtime(jailedRoot, topDirs);
 		const perRepoCap = scanConfig.perRepoMaxFiles;
 
-		const rootContext: VisitContext = { root, files, maxFiles: scanConfig.maxFiles };
+		const rootContext: VisitContext = { root: jailedRoot, files, maxFiles: scanConfig.maxFiles };
 		for (const entry of sortEntriesAlphabetically(topEntries.filter((item) => item.isFile()))) {
-			await addSourceFileIfEligible(rootContext, path.join(root, entry.name));
+			await addSourceFileIfEligible(rootContext, path.join(jailedRoot, entry.name));
 		}
 
 		for (const entry of sortedDirs) {
@@ -43,12 +45,12 @@ export async function collectSourceFiles(root: string, scanConfig: Required<Expl
 
 			const beforeCount = files.length;
 			const repoContext: VisitContext = {
-				root,
+				root: jailedRoot,
 				files,
 				maxFiles: scanConfig.maxFiles,
 				budget: perRepoCap,
 			};
-			await visitDirectory(path.join(root, entry.name), repoContext, ignoreDirs, gitignore);
+			await visitDirectory(path.join(jailedRoot, entry.name), repoContext, ignoreDirs, gitignore);
 			if (files.length > beforeCount) {
 				reposScanned.push(entry.name);
 			}
@@ -61,8 +63,8 @@ export async function collectSourceFiles(root: string, scanConfig: Required<Expl
 		};
 	}
 
-	const context: VisitContext = { root, files, maxFiles: scanConfig.maxFiles };
-	await visitDirectory(root, context, ignoreDirs, gitignore);
+	const context: VisitContext = { root: jailedRoot, files, maxFiles: scanConfig.maxFiles };
+	await visitDirectory(jailedRoot, context, ignoreDirs, gitignore);
 	return { files, scanStrategy: 'single-repo' };
 }
 

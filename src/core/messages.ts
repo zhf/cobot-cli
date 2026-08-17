@@ -7,12 +7,39 @@ export interface ToolCall {
   };
 }
 
+export type MessageContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } };
+
+export type MessageContent = string | MessageContentPart[];
+
 export interface Message {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
+  content: MessageContent;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   reasoning?: string;
+}
+
+export function messageContentToString(content: MessageContent | undefined | null): string {
+  if (content == null) {
+    return '';
+  }
+  if (typeof content === 'string') {
+    return content;
+  }
+  return content
+    .map((part) => {
+      if (part.type === 'text') {
+        return part.text;
+      }
+      if (part.type === 'image_url') {
+        return '[image]';
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
 }
 
 export interface ApiError {

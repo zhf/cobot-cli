@@ -3,10 +3,9 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { setReadFilesTracker } from './validators.js';
-import { ToolResult } from './files.js';
+import type { ToolResult } from './files.js';
 
-// Re-export ToolResult for external use
-export { ToolResult };
+export type { ToolResult };
 
 const execAsync = promisify(exec);
 

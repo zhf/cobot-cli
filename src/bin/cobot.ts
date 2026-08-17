@@ -7,6 +7,7 @@ import ConfigManager, { ExploreThinkingMode, ExploreAdaptiveConfig } from '../co
 import { SeeyonChatClient, SeeyonChatError } from '../core/seeyon-chat.js';
 import { writeProjectContext } from '../utils/context/projectContext.js';
 import { formatCodingAgentList, loadCodingAgents, resolveCodingAgent, YOLO_AGENT_NAME } from '../core/coding-agents.js';
+import { createMCPCommand } from '../commands/mcp.js';
 
 interface GlobalOptions {
   temperature: number;
@@ -672,5 +673,7 @@ configCommand
   .action((key: string) => {
     clearConfigValue(key);
   });
+
+program.addCommand(createMCPCommand());
 
 program.parse();

@@ -2,14 +2,15 @@ import OpenAI from 'openai';
 import type { ClientOptions } from 'openai';
 import fs from 'fs';
 import path from 'path';
-import { executeTool, ToolResult } from '../tools/registry.js';
-import { hasFileBeenReadBeforeEdit, getReadBeforeEditErrorMessage } from '../tools/validators.js';
-import { ALL_TOOL_SCHEMAS, ToolSchema } from '../tools/schemas/index.js';
+import { ALL_TOOL_SCHEMAS, type ToolSchema } from '../tools/schemas/index.js';
 import ConfigManager from '../config/ConfigManager.js';
-import { Message, ToolCall, ApiError } from './messages.js';
+import { Message, ToolCall, ApiError, messageContentToString } from './messages.js';
 import { debugLog, setDebugLoggingEnabled } from './logger.js';
 import { buildChatCompletionPayload, createStreamingChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
+import type { ToolBackend } from '../tools/backend.js';
+import { LocalToolBackend } from '../tools/backend.js';
+import { isInsideWorkspace, setWorkspaceRoot } from '../tools/workspace-path.js';
 import { QuestionAnswer, QuestionPrompt } from '../tools/question.js';
 import { buildSkillContextForExplore, findMatchingSkillsForPrompt, listSkills, skillDescriptionSuffix, skillSystemPrompt } from './skills.js';
 import {
@@ -20,8 +21,18 @@ import {
   resolveCodingAgent,
 } from './coding-agents.js';
 import { runParallelExplore, type ExploreProgressEvent } from './explore-runner.js';
+import { getMCPToolSchemas } from '../mcp/tools.js';
+import { getMCPManager, initializeMCPServers } from '../mcp/client.js';
+import { buildUserMessageContent } from './image-attachments.js';
 
 
+
+export interface AgentCreateOptions {
+  cwd?: string;
+  toolBackend?: ToolBackend;
+  configDir?: string;
+  skipMcp?: boolean;
+}
 
 export class Agent {
   private client: OpenAI | null = null;
@@ -45,6 +56,10 @@ export class Agent {
   private codingAgent: CodingAgentInfo;
 
   private configManager: ConfigManager;
+
+  private toolBackend: ToolBackend = new LocalToolBackend();
+
+  private mcpSchemas: ToolSchema[] = [];
 
   private onToolStart?: (name: string, args: Record<string, unknown>) => void;
 
@@ -90,11 +105,12 @@ export class Agent {
     systemMessage: string | null,
     codingAgent: CodingAgentInfo,
     debug?: boolean,
+    configDir?: string,
   ) {
     this.model = model;
     this.temperature = temperature;
     this.codingAgent = codingAgent;
-    this.configManager = new ConfigManager();
+    this.configManager = new ConfigManager(configDir);
 
     // Set debug mode
     setDebugLoggingEnabled(debug || false);
@@ -121,9 +137,14 @@ export class Agent {
     systemMessage: string | null,
     debug?: boolean,
     codingAgentName?: string | null,
+    options?: AgentCreateOptions,
   ): Promise<Agent> {
+    if (options?.cwd) {
+      setWorkspaceRoot(options.cwd);
+    }
+
     // Check for default model in config if model not explicitly provided
-    const configManager = new ConfigManager();
+    const configManager = new ConfigManager(options?.configDir);
     const codingAgent = resolveCodingAgent(codingAgentName, configManager.getDefaultAgent(), configManager.getCodingAgents());
     const defaultModel = configManager.getDefaultModel();
     const selectedModel = codingAgent.model || defaultModel || model;
@@ -135,7 +156,9 @@ export class Agent {
       systemMessage,
       codingAgent,
       debug,
+      options?.configDir,
     );
+    agent.toolBackend = options?.toolBackend ?? new LocalToolBackend();
 
     // Load base URL from config if available
     const baseURL = configManager.getBaseURL();
@@ -151,17 +174,40 @@ export class Agent {
       debugLog('Loaded API key from config');
     }
 
+    try {
+      if (!options?.skipMcp) {
+        await initializeMCPServers();
+        debugLog('MCP servers initialized');
+      }
+      if (agent.toolBackend.listMcpSchemas) {
+        agent.mcpSchemas = await agent.toolBackend.listMcpSchemas();
+      }
+    } catch (error) {
+      debugLog('MCP initialization failed:', error);
+    }
+
     return agent;
   }
 
   private buildDefaultSystemMessage(): string {
     const cwd = process.cwd();
     const skills = skillSystemPrompt(this.configManager.getSkillsConfig());
+    const chromaTools = getMCPToolSchemas().some((tool) => tool.function.name.startsWith('mcp__chroma__'));
+    const chromaGuidance = chromaTools
+      ? `
+Chroma image editing (mcp__chroma__*):
+- Only call Chroma tools the user asked for. "Open in Chroma" → open_image only, then stop. Do not get_snapshot, set_params, set_geometry, or export unless the user requested inspect/edit/export.
+- When the user does ask to edit: open if needed → get_snapshot once if you need vision → one set_geometry and/or set_params → optional one verify snapshot → export only if asked.
+- Crop is ALWAYS absolute on the full oriented source (0...1 top-left) and replaces any previous crop. Snapshots of a cropped image are NOT a new crop coordinate space. One crop attempt; if wrong, crop:null then one absolute redo, then stop and ask.
+- Param neutrals: highlights=1, shadows=0, contrast=1, saturation=1, exposure=0, blackPoint=0, whitePoint=1, midtone=1. Never invent an "auto enhance" unless the user asked. If crushed/black after an edit, reset_params.
+`
+      : '';
     return `You are a coding and everyday office work assistant powered by ${this.model}. You have access to various tools for coding tasks. Always use these tools for any implementation requests—never reply with text-only responses or code snippets when the task requires actual files.
 
 Current working directory: ${cwd}
-${skills ? `\n${skills}\n` : ''}
 
+Treat the current working directory as the default scope for local file work. For vague requests like "find a photo", "open the image", or "what's in here", search or list the current working directory first (glob/list_files) before asking where to look.
+${skills ? `\n${skills}\n` : ''}${chromaGuidance}
 For tasks like building, creating, or implementing:
 - Start with create_file or list_files—don't give explanations first.
 - Use the tools to generate real, working code files (not examples).
@@ -176,6 +222,7 @@ File Operations:
 - Always read_file before editing any file.
 - Prefer glob for finding files by filename pattern. Use search_files for searching file contents.
 - Prefer apply_patch for multi-file edits, moves, and coordinated changes.
+- Local image paths in the user message are attached as vision input automatically. Describe them from the attached image; do not call open_file or read_file just to "see" an image.
 
 Tool Usage:
 - Use the "file_path" parameter for file operations—avoid "path".
@@ -203,6 +250,8 @@ Never generate markdown tables. Be brief and efficient.
     return `${prompt.trim()}
 
 Current working directory: ${cwd}
+
+Treat the current working directory as the default scope for local file work. For vague requests like "find a photo", "open the image", or "what's in here", search or list the current working directory first (glob/list_files) before asking where to look.
 ${skills ? `\n${skills}\n` : ''}
 `;
   }
@@ -212,6 +261,9 @@ ${skills ? `\n${skills}\n` : ''}
       const customContextFilePath = process.env.OPENAI_CONTEXT_FILE;
       const baseDir = process.env.OPENAI_CONTEXT_DIR || process.cwd();
       const contextPath = customContextFilePath || path.join(baseDir, '.cobot', 'context.md');
+      if (!isInsideWorkspace(contextPath)) {
+        return;
+      }
       const contextLimit = parseInt(process.env.OPENAI_CONTEXT_LIMIT || '20000', 10);
       if (fs.existsSync(contextPath)) {
         const contextContent = fs.readFileSync(contextPath, 'utf-8');
@@ -307,7 +359,11 @@ ${skills ? `\n${skills}\n` : ''}
       }
 
       finishReason = choice.finish_reason ?? finishReason;
-      const { delta } = choice;
+      const delta = choice.delta;
+      if (!delta) {
+        continue;
+      }
+
       const contentDelta = delta.content || '';
       const reasoningDelta = getStringField(delta, 'reasoning_content') || getStringField(delta, 'reasoning') || '';
 
@@ -363,7 +419,7 @@ ${skills ? `\n${skills}\n` : ''}
   }
 
   private getToolSchemas(): OpenAI.Chat.Completions.ChatCompletionTool[] {
-    const toolSchemas: ToolSchema[] = ALL_TOOL_SCHEMAS.filter((toolSchema) => getToolPermissionAction(toolSchema.function.name, this.codingAgent) !== 'deny')
+    const builtinSchemas: ToolSchema[] = ALL_TOOL_SCHEMAS.filter((toolSchema) => getToolPermissionAction(toolSchema.function.name, this.codingAgent) !== 'deny')
       .map((toolSchema) => {
       if (toolSchema.function.name !== 'skill') {
         return toolSchema;
@@ -378,7 +434,11 @@ ${skills ? `\n${skills}\n` : ''}
       };
     });
 
-    return toolSchemas as OpenAI.Chat.Completions.ChatCompletionTool[];
+    const mcpSchemas = (this.mcpSchemas.length > 0 ? this.mcpSchemas : getMCPToolSchemas()).filter(
+      (toolSchema) => getToolPermissionAction(toolSchema.function.name, this.codingAgent) !== 'deny',
+    );
+
+    return [...builtinSchemas, ...mcpSchemas] as OpenAI.Chat.Completions.ChatCompletionTool[];
   }
 
   public setApiKey(apiKey: string): void {
@@ -524,7 +584,7 @@ ${skills ? `\n${skills}\n` : ''}
 
     const firstSystemMessage = this.baseMessages.find((msg) => msg.role === 'system');
     if (firstSystemMessage) {
-      this.systemMessage = firstSystemMessage.content;
+      this.systemMessage = messageContentToString(firstSystemMessage.content);
     }
   }
 
@@ -533,12 +593,12 @@ ${skills ? `\n${skills}\n` : ''}
     const newSystemMessage = this.buildDefaultSystemMessage();
     this.systemMessage = newSystemMessage;
 
-    const baseSystemMsgIndex = this.baseMessages.findIndex((msg) => msg.role === 'system' && msg.content.includes('coding assistant'));
+    const baseSystemMsgIndex = this.baseMessages.findIndex((msg) => msg.role === 'system' && messageContentToString(msg.content).includes('coding assistant'));
     if (baseSystemMsgIndex >= 0) {
       this.baseMessages[baseSystemMsgIndex].content = newSystemMessage;
     }
 
-    const systemMsgIndex = this.messages.findIndex((msg) => msg.role === 'system' && msg.content.includes('coding assistant'));
+    const systemMsgIndex = this.messages.findIndex((msg) => msg.role === 'system' && messageContentToString(msg.content).includes('coding assistant'));
     if (systemMsgIndex >= 0) {
       this.messages[systemMsgIndex].content = newSystemMessage;
     }
@@ -658,8 +718,16 @@ ${skills ? `\n${skills}\n` : ''}
       debugLog('OpenAI client initialized successfully');
     }
 
-    // Add user message
-    this.messages.push({ role: 'user', content: userInput });
+    // Add user message (local image paths become multimodal vision attachments)
+    const { content: userContent, attachedImages } = await buildUserMessageContent(userInput);
+    if (attachedImages.length > 0) {
+      debugLog('Attached images for vision:', attachedImages.map((image) => ({
+        filePath: image.filePath,
+        mimeType: image.mimeType,
+        byteLength: image.byteLength,
+      })));
+    }
+    this.messages.push({ role: 'user', content: userContent });
 
     const maxToolIterations = 50;
     let currentIteration = 0;
@@ -767,11 +835,28 @@ ${skills ? `\n${skills}\n` : ''}
             }));
             this.messages.push(assistantMsg);
 
-            // Execute tool calls
-            for (const toolCallRequest of message.tool_calls || []) {
+            // Execute tool calls — all tool role messages must follow the assistant
+            // tool_calls message with no other roles in between (OpenAI/Azure requirement).
+            const pendingVisionImages: Array<{ mimeType: string; base64: string }> = [];
+            const toolCalls = message.tool_calls || [];
+
+            for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
+              const toolCallRequest = toolCalls[toolIndex];
+
               // Check for interruption before each tool execution
               if (this.isInterrupted) {
                 debugLog('Tool execution interrupted by user');
+                for (let rest = toolIndex; rest < toolCalls.length; rest++) {
+                  this.messages.push({
+                    role: 'tool',
+                    tool_call_id: toolCalls[rest].id,
+                    content: JSON.stringify({
+                      success: false,
+                      error: 'Tool execution interrupted by user',
+                      userRejected: true,
+                    }),
+                  });
+                }
                 this.currentAbortController = null;
                 return;
               }
@@ -795,20 +880,37 @@ ${skills ? `\n${skills}\n` : ''}
                 sessionAutoApprove: this.sessionAutoApprove,
                 isInterrupted: this.isInterrupted,
                 codingAgent: this.codingAgent,
+                toolBackend: this.toolBackend,
               };
               
               const result = await executeToolCall(toolCall, callbacks, options);
+              const visionImage = (result as { visionImage?: { mimeType: string; base64: string } }).visionImage;
+              const { visionImage: _omitVision, ...toolPayload } = result as unknown as Record<string, unknown>;
 
               // Add tool result to conversation (including rejected ones)
               this.messages.push({
                 role: 'tool',
                 tool_call_id: toolCallRequest.id,
-                content: JSON.stringify(result),
+                content: JSON.stringify(toolPayload),
               });
 
-              // Check if user rejected the tool, if so, stop processing
+              if (visionImage?.base64) {
+                pendingVisionImages.push(visionImage);
+              }
+
+              // Check if user rejected the tool, if so, respond to remaining tool_calls then stop
               if (result.userRejected) {
-                // Add a note to the conversation that the user rejected the tool
+                for (let rest = toolIndex + 1; rest < toolCalls.length; rest++) {
+                  this.messages.push({
+                    role: 'tool',
+                    tool_call_id: toolCalls[rest].id,
+                    content: JSON.stringify({
+                      success: false,
+                      error: 'Tool execution canceled because a prior tool was rejected',
+                      userRejected: true,
+                    }),
+                  });
+                }
                 const toolName = toolCallRequest.function.name || 'unknown tool';
                 this.messages.push({
                   role: 'system',
@@ -816,6 +918,26 @@ ${skills ? `\n${skills}\n` : ''}
                 });
                 return;
               }
+            }
+
+            // Attach Chroma snapshots after the full tool-result block so message order stays valid.
+            for (const visionImage of pendingVisionImages) {
+              this.messages.push({
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'Chroma snapshot for vision (reference only). Do not edit unless the user asked for edits.',
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:${visionImage.mimeType};base64,${visionImage.base64}`,
+                      detail: 'high',
+                    },
+                  },
+                ],
+              });
             }
 
             // Continue loop to get model response to tool results

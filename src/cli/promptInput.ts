@@ -1,35 +1,46 @@
-export async function readStdinIfAvailable(): Promise<string> {
-  if (process.stdin.isTTY) {
-    return '';
-  }
+export async function readStdinIfAvailable(options?: { timeoutMs?: number }): Promise<string> {
+	if (process.stdin.isTTY) {
+		return '';
+	}
 
-  return new Promise((resolve) => {
-    process.stdin.setEncoding('utf8');
+	return new Promise((resolve) => {
+		process.stdin.setEncoding('utf8');
 
-    let data = '';
+		let data = '';
+		let settled = false;
 
-    process.stdin.on('data', (chunk: string) => {
-      data += chunk;
-    });
+		const finish = () => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			resolve(data);
+		};
 
-    process.stdin.on('end', () => {
-      resolve(data);
-    });
+		process.stdin.on('data', (chunk: string) => {
+			data += chunk;
+		});
 
-    process.stdin.on('error', () => {
-      resolve(data);
-    });
+		process.stdin.on('end', finish);
+		process.stdin.on('error', finish);
+		process.stdin.resume();
 
-    process.stdin.resume();
-  });
+		if (options?.timeoutMs !== undefined) {
+			setTimeout(finish, options.timeoutMs);
+		}
+	});
 }
 
 export async function buildPromptWithStdin(prompt: string = ''): Promise<string> {
-  const stdinInput = await readStdinIfAvailable();
+	// When a prompt argument is already present, only briefly poll non-TTY stdin so
+	// piped extras can still merge, without hanging forever in agent shells.
+	const stdinInput = await readStdinIfAvailable({
+		timeoutMs: prompt.trim() ? 50 : undefined,
+	});
 
-  if (!stdinInput) {
-    return prompt;
-  }
+	if (!stdinInput) {
+		return prompt;
+	}
 
-  return prompt ? `${prompt}\n\n${stdinInput}` : stdinInput;
+	return prompt ? `${prompt}\n\n${stdinInput}` : stdinInput;
 }

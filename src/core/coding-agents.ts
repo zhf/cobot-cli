@@ -6,7 +6,7 @@ import type { ToolSchema } from '../tools/schemas/index.js';
 
 export type AgentMode = 'primary' | 'subagent' | 'all';
 export type PermissionAction = 'allow' | 'ask' | 'deny';
-export type PermissionKey = 'read' | 'edit' | 'bash' | 'task' | 'database' | 'media' | 'web' | 'interaction' | 'skill';
+export type PermissionKey = 'read' | 'edit' | 'bash' | 'task' | 'database' | 'media' | 'web' | 'interaction' | 'skill' | 'mcp';
 
 export type PermissionConfig = Partial<Record<PermissionKey, PermissionAction>>;
 
@@ -80,6 +80,7 @@ const DEFAULT_PERMISSIONS: Required<PermissionConfig> = {
   web: 'ask',
   interaction: 'allow',
   skill: 'allow',
+  mcp: 'ask',
 };
 
 const PLAN_PERMISSIONS: Required<PermissionConfig> = {
@@ -92,6 +93,7 @@ const PLAN_PERMISSIONS: Required<PermissionConfig> = {
   web: 'ask',
   interaction: 'allow',
   skill: 'allow',
+  mcp: 'deny',
 };
 
 const EXPLORE_PERMISSIONS: Required<PermissionConfig> = {
@@ -104,6 +106,7 @@ const EXPLORE_PERMISSIONS: Required<PermissionConfig> = {
   web: 'deny',
   interaction: 'allow',
   skill: 'allow',
+  mcp: 'deny',
 };
 
 function createYoloPermissions(): Required<PermissionConfig> {
@@ -134,7 +137,7 @@ function isAgentMode(value: unknown): value is AgentMode {
 }
 
 function isPermissionKey(value: string): value is PermissionKey {
-  return value === 'read' || value === 'edit' || value === 'bash' || value === 'task' || value === 'database' || value === 'media' || value === 'web' || value === 'interaction' || value === 'skill';
+  return value === 'read' || value === 'edit' || value === 'bash' || value === 'task' || value === 'database' || value === 'media' || value === 'web' || value === 'interaction' || value === 'skill' || value === 'mcp';
 }
 
 function normalizeAgentConfig(value: unknown): CodingAgentConfig | undefined {
@@ -414,6 +417,9 @@ export function resolveCodingAgent(name?: string | null, defaultAgent?: string |
 }
 
 export function getToolPermissionKey(toolName: string): PermissionKey | undefined {
+  if (toolName.startsWith('mcp__')) {
+    return 'mcp';
+  }
   return TOOL_PERMISSIONS[toolName];
 }
 
