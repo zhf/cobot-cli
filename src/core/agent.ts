@@ -94,6 +94,7 @@ export class Agent {
   private onError?: (error: string) => Promise<boolean>;
 
   private requestCount: number = 0;
+  private readonly customSystemMessage: string | null;
 
   private currentAbortController: AbortController | null = null;
 
@@ -107,6 +108,7 @@ export class Agent {
     debug?: boolean,
     configDir?: string,
   ) {
+    this.customSystemMessage = systemMessage;
     this.model = model;
     this.temperature = temperature;
     this.codingAgent = codingAgent;
@@ -190,7 +192,6 @@ export class Agent {
   }
 
   private buildDefaultSystemMessage(): string {
-    const cwd = process.cwd();
     const skills = skillSystemPrompt(this.configManager.getSkillsConfig());
     const chromaTools = getMCPToolSchemas().some((tool) => tool.function.name.startsWith('mcp__chroma__'));
     const chromaGuidance = chromaTools
@@ -204,7 +205,7 @@ Chroma image editing (mcp__chroma__*):
       : '';
     return `You are a coding and everyday office work assistant powered by ${this.model}. You have access to various tools for coding tasks. Always use these tools for any implementation requests—never reply with text-only responses or code snippets when the task requires actual files.
 
-Current working directory: ${cwd}
+Tool workspace root: . (use repository-relative paths; do not prepend a displayed directory name).
 
 Treat the current working directory as the default scope for local file work. For vague requests like "find a photo", "open the image", or "what's in here", search or list the current working directory first (glob/list_files) before asking where to look.
 ${skills ? `\n${skills}\n` : ''}${chromaGuidance}
@@ -245,11 +246,10 @@ Never generate markdown tables. Be brief and efficient.
   }
 
   private buildAgentSystemMessage(prompt: string): string {
-    const cwd = process.cwd();
     const skills = skillSystemPrompt(this.configManager.getSkillsConfig());
     return `${prompt.trim()}
 
-Current working directory: ${cwd}
+Tool workspace root: . (use repository-relative paths; do not prepend a displayed directory name).
 
 Treat the current working directory as the default scope for local file work. For vague requests like "find a photo", "open the image", or "what's in here", search or list the current working directory first (glob/list_files) before asking where to look.
 ${skills ? `\n${skills}\n` : ''}
@@ -538,6 +538,7 @@ ${skills ? `\n${skills}\n` : ''}
 
   public switchCodingAgent(agentName: string): void {
     const nextAgent = resolveCodingAgent(agentName, this.configManager.getDefaultAgent(), this.configManager.getCodingAgents());
+    if (nextAgent.name === this.codingAgent.name) return;
     this.codingAgent = nextAgent;
 
     if (nextAgent.model) {
@@ -547,9 +548,9 @@ ${skills ? `\n${skills}\n` : ''}
       this.temperature = nextAgent.temperature;
     }
 
-    this.systemMessage = nextAgent.prompt
+    this.systemMessage = this.customSystemMessage ?? (nextAgent.prompt
       ? this.buildAgentSystemMessage(nextAgent.prompt)
-      : this.buildDefaultSystemMessage();
+      : this.buildDefaultSystemMessage());
     this.messages = [{ role: 'system', content: this.systemMessage }];
     this.loadProjectContextMessages();
     this.baseMessages = cloneMessages(this.messages);
@@ -589,18 +590,14 @@ ${skills ? `\n${skills}\n` : ''}
   }
 
   private updateDefaultSystemMessageForModel(): void {
-    // Update system message to reflect new model
-    const newSystemMessage = this.buildDefaultSystemMessage();
+    const previousSystemMessage = this.systemMessage;
+    const newSystemMessage = this.customSystemMessage ?? (this.codingAgent.prompt
+      ? this.buildAgentSystemMessage(this.codingAgent.prompt)
+      : this.buildDefaultSystemMessage());
     this.systemMessage = newSystemMessage;
-
-    const baseSystemMsgIndex = this.baseMessages.findIndex((msg) => msg.role === 'system' && messageContentToString(msg.content).includes('coding assistant'));
-    if (baseSystemMsgIndex >= 0) {
-      this.baseMessages[baseSystemMsgIndex].content = newSystemMessage;
-    }
-
-    const systemMsgIndex = this.messages.findIndex((msg) => msg.role === 'system' && messageContentToString(msg.content).includes('coding assistant'));
-    if (systemMsgIndex >= 0) {
-      this.messages[systemMsgIndex].content = newSystemMessage;
+    for (const messages of [this.baseMessages, this.messages]) {
+      const systemMessage = messages.find(msg => msg.role === 'system' && messageContentToString(msg.content) === previousSystemMessage);
+      if (systemMessage) systemMessage.content = newSystemMessage;
     }
   }
 
@@ -759,13 +756,30 @@ ${skills ? `\n${skills}\n` : ''}
           // Create AbortController for this request
           this.currentAbortController = new AbortController();
 
+	  const finalRound = currentIteration === maxToolIterations - 1;
+	  // Request-only guidance: do not accumulate one budget message per round in history.
+	  const budgetMessage: Message = {
+	    role: 'system',
+	    content: [
+	      `Round ${currentIteration + 1} of ${maxToolIterations}; ${maxToolIterations - currentIteration - 1} rounds remain after this response. The last round is reserved for your answer.`,
+	      'For codebase questions, identify the requested conclusions and the unresolved evidence needed for each. Before another search, identify which unresolved conclusion it will support.',
+	      'For integration questions, trace the public entry point through authorization, input validation, response construction, and relevant state transitions. Verify exact status codes, field meanings, and completion semantics in implementation; documentation and analogous features alone are not sufficient.',
+		      'Check each requested conclusion against that evidence before answering. A failed or narrowly scoped search does not prove a feature or test is absent; disclose uncertainty. Prefer the shortest supported integration path and avoid optional alternatives that the question does not need.',
+		      'Once the requested conclusions have implementation evidence and relevant test coverage has been inspected, answer; do not audit adjacent features unless needed to resolve a remaining claim.',
+	      'Use numbered read_file results directly for citations. Prefer focused queries and bounded file ranges.',
+	      'search_files is literal by default; set pattern_type="regex" for alternatives like A|B. Treat the tool workspace root as "." and use relative paths.',
+	      finalRound
+		? 'No more tools are available. Answer now using the evidence gathered, explicitly disclose gaps, and distinguish inspected tests from executed tests.'
+		: 'If the question is already supported, give the answer now.',
+	    ].join('\n'),
+	  };
           const options: ChatCompletionOptions = {
             model: this.model,
-            messages: this.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+	    messages: [...this.messages, budgetMessage] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
             temperature: this.temperature,
             max_tokens: 8000,
             tools: this.getToolSchemas(),
-            tool_choice: 'auto',
+	    tool_choice: finalRound ? 'none' : 'auto',
             stream: true,
             stream_options: { include_usage: true },
             signal: this.currentAbortController.signal,
@@ -812,7 +826,7 @@ ${skills ? `\n${skills}\n` : ''}
           }
 
           // Handle tool calls if present
-          if (message.tool_calls) {
+	  if (message.tool_calls?.length) {
             // Show thinking text or model reasoning if present
             if ((message.content || modelReasoning) && !response.streamedMessageId) {
               if (this.onThinkingText) {
@@ -947,6 +961,7 @@ ${skills ? `\n${skills}\n` : ''}
 
           // No tool calls, this is the final response
           const content = message.content || '';
+	  if (!content.trim()) throw new Error('Model returned an empty final answer');
           debugLog('Final response - no tool calls detected');
           debugLog('Final content length:', content.length);
           debugLog('Final content preview:', content.substring(0, 200));
@@ -1058,7 +1073,7 @@ ${skills ? `\n${skills}\n` : ''}
           currentIteration = 0; // Reset iteration counter
           continue; // Continue the outer loop
         } else {
-          return; // Exit both loops
+	  throw new Error(`Agent exhausted the ${maxToolIterations}-round limit without a final answer`);
         }
       }
     }

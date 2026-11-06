@@ -44,7 +44,7 @@ export const READ_FILE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: 'read_file',
-    description: 'Read file contents with optional line range. REQUIRED before edit_file. Use to check if files exist and examine current code before making changes. Example: {"file_path": "src/app.js", "start_line": 10, "end_line": 20}',
+    description: 'Read file contents with original line numbers and an optional line range. Cite these line numbers directly; do not reread just to count lines. Line-number prefixes are annotations, not file content; omit them when editing. REQUIRED before edit_file. Use to check if files exist and examine current code before making changes. Example: {"file_path": "src/app.js", "start_line": 10, "end_line": 20}',
     parameters: {
       type: 'object',
       properties: {
@@ -52,6 +52,11 @@ export const READ_FILE_SCHEMA: ToolSchema = {
           type: 'string',
           description: 'Path to file. For files in current directory use just filename (e.g. "app.js"). For subdirectories use "src/app.js". DO NOT use absolute paths or leading slashes.',
         },
+	line_numbers: {
+	  type: 'boolean',
+	  description: 'Include original line numbers (default true). Set false only when raw file content is needed.',
+	  default: true,
+	},
         start_line: {
           type: 'integer',
           description: 'Starting line number (1-indexed, optional)',
@@ -220,11 +225,11 @@ export const SEARCH_FILES_SCHEMA: ToolSchema = {
       properties: {
         pattern: {
           type: 'string',
-          description: 'Text to search for (can be function names, classes, strings, etc.)',
+	  description: 'Literal text by default. For alternatives such as foo|bar, set pattern_type="regex"; otherwise | and other regex operators match literally.',
         },
         file_pattern: {
           type: 'string',
-          description: 'File pattern filter (e.g., "*.py", "*.js", "src/*.ts")',
+	  description: 'Basename wildcard ("*.ts") or path relative to directory ("src/*.ts", "src/**/*.ts"). * matches within a directory; ** spans directories. Brackets are literal.',
           default: '*',
         },
         directory: {
@@ -240,7 +245,7 @@ export const SEARCH_FILES_SCHEMA: ToolSchema = {
         pattern_type: {
           type: 'string',
           enum: ['substring', 'regex', 'exact', 'fuzzy'],
-          description: 'Match type: substring (partial), regex (patterns), exact (whole), fuzzy (similar)',
+	  description: 'Match type: substring (literal, default), regex (explicit regular expression), exact (literal), fuzzy (similar). Select regex for A|B alternation.',
           default: 'substring',
         },
         file_types: {

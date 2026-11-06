@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitignoreFilter } from '../utils/gitignore.js';
 import { ToolResult, createToolResponse } from './files.js';
-import { resolveWorkspaceFile, WorkspacePathError } from './workspace-path.js';
+import { matchesFilePattern } from '../utils/file-pattern.js';
+import { getWorkspaceRoot, resolveWorkspaceFile, WorkspacePathError } from './workspace-path.js';
 
 // Helper interfaces for search results
 interface SearchMatch {
@@ -90,10 +91,14 @@ export async function searchFiles(
     }
 
     // Collect all files to search
+    const searchDescription = `Mode: ${patternType}; directory: ${directory || '.'}; file_pattern: ${fileNamePattern}.`;
+    const literalHint = patternType !== 'regex' && /[|^$*+?()[\]{}]/.test(searchPattern)
+      ? ' Regex operators are literal in this mode; use pattern_type="regex" for alternatives or regex syntax.'
+      : '';
     const filesToSearch = await collectFiles(searchDir, fileNamePattern, fileTypes, finalExcludeDirs, finalExcludeFiles);
 
     if (filesToSearch.length === 0) {
-      return createToolResponse(true, [], 'No files found matching criteria');
+      return createToolResponse(true, [], `No files found matching criteria. ${searchDescription}${literalHint}`);
     }
 
     // Search through files
@@ -140,7 +145,7 @@ export async function searchFiles(
 
         if (fileMatches.length > 0) {
           searchResults.push({
-            filePath: path.relative(process.cwd(), filePath),
+	    filePath: path.relative(getWorkspaceRoot(), filePath),
             matches: fileMatches,
             totalMatches: fileMatches.length,
           });
@@ -166,7 +171,7 @@ export async function searchFiles(
       })));
     }
 
-    const message = `Found ${totalMatches} match(es) in ${searchResults.length} file(s)`;
+    const message = `Found ${totalMatches} match(es) in ${searchResults.length} file(s). ${searchDescription}${totalMatches === 0 ? literalHint : ''}`;
     return createToolResponse(true, formattedResults, message);
   } catch (error) {
     return createToolResponse(false, undefined, '', 'Error: Failed to search files');
@@ -222,7 +227,10 @@ async function collectFiles(
           }
 
           // Check file pattern
-          if (!matchesPattern(entry.name, fileNamePattern)) {
+	  const candidate = fileNamePattern.includes('/')
+	    ? path.relative(directory, fullPath).split(path.sep).join('/')
+	    : entry.name;
+	  if (!matchesPattern(candidate, fileNamePattern.replace(/^\.\//, ''))) {
             continue;
           }
 
@@ -250,15 +258,7 @@ async function collectFiles(
 
 // Helper function to match glob-like patterns
 function matchesPattern(filename: string, pattern: string): boolean {
-  if (pattern === '*') return true;
-
-  // Simple glob matching, convert * to .* and ? to .
-  const regexPattern = pattern
-    .replace(/\./g, '\\.')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
-
-  return new RegExp(`^${regexPattern}$`, 'i').test(filename);
+  return matchesFilePattern(filename, pattern);
 }
 
 // Helper function to detect binary files

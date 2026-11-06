@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { matchesFilePattern } from './file-pattern.js';
 import IGNORE_PATTERNS from './ignorePatterns.js';
-import { isGitignored } from './gitignore.js';
+import { GitignoreFilter, isGitignored } from './gitignore.js';
 
 /**
  * Write content to a file with safety checks
@@ -77,31 +78,37 @@ export async function generateDirectoryTreeDisplay(
       return `Directory not found: ${directory}`;
     }
 
-    const items = await fs.promises.readdir(directoryPath, { withFileTypes: true });
-    const validItems = items
-      .filter((item) => !shouldFileOrDirectoryBeIgnored(path.join(directoryPath, item.name)))
-      .filter((item) => showHidden || !item.name.startsWith('.'))
-      .sort((a, b) => {
-        // Directories first, then alphabetical
-        if (a.isDirectory() && !b.isDirectory()) return -1;
-        if (!a.isDirectory() && b.isDirectory()) return 1;
-        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
-      });
-
-    let output = `${path.basename(directoryPath)}/\n`;
-
-    validItems.forEach((item, index) => {
-      const isLast = index === validItems.length - 1;
-      const prefix = isLast ? '└── ' : '├── ';
-
-      if (item.isDirectory()) {
-        output += `${prefix}${item.name}/\n`;
-      } else {
-        output += `${prefix}${item.name}\n`;
+    const output = ['./'];
+    const gitignore = new GitignoreFilter(directoryPath);
+    const maxEntries = 2000;
+    let count = 0;
+    let truncated = false;
+    async function walk(dir: string, indent: string): Promise<void> {
+      const items = (await fs.promises.readdir(dir, { withFileTypes: true }))
+	.filter(item => !item.isSymbolicLink())
+	.filter(item => !gitignore.isIgnored(path.join(dir, item.name), item.isDirectory()))
+	.filter(item => !shouldFileOrDirectoryBeIgnored(path.join(dir, item.name), showHidden))
+	.filter(item => showHidden || !item.name.startsWith('.'))
+	.filter(item => item.isDirectory() || matchesFilePattern(
+	  pattern.includes('/') ? path.relative(directoryPath, path.join(dir, item.name)).split(path.sep).join('/') : item.name,
+	  pattern.replace(/^\.\//, ''),
+	))
+	.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
+      for (let i = 0; i < items.length; i++) {
+	if (count >= maxEntries) { truncated = true; return; }
+	const item = items[i]!;
+	const last = i === items.length - 1;
+	count++;
+	output.push(`${indent}${last ? '└── ' : '├── '}${item.name}${item.isDirectory() ? '/' : ''}`);
+	if (recursive && item.isDirectory()) {
+	  await walk(path.join(dir, item.name), `${indent}${last ? '    ' : '│   '}`);
+	  if (truncated) return;
+	}
       }
-    });
-
-    return output.trim();
+    }
+    await walk(directoryPath, '');
+    if (truncated) output.push(`Listing truncated at ${maxEntries} entries; narrow the directory or pattern.`);
+    return output.join('\n');
   } catch (error) {
     return `Error reading directory: ${error}`;
   }
@@ -110,7 +117,7 @@ export async function generateDirectoryTreeDisplay(
 /**
  * Check if a file or directory should be ignored
  */
-export function shouldFileOrDirectoryBeIgnored(filePath: string): boolean {
+export function shouldFileOrDirectoryBeIgnored(filePath: string, showHidden = false): boolean {
   const pathStr = path.resolve(filePath);
   const name = path.basename(pathStr);
 
@@ -130,7 +137,7 @@ export function shouldFileOrDirectoryBeIgnored(filePath: string): boolean {
 
   // Ignore hidden files and directories (starting with .)
   const allowedHiddenFiles = new Set(['.env', '.gitignore', '.dockerfile']);
-  if (name.startsWith('.') && !allowedHiddenFiles.has(name)) {
+  if (!showHidden && name.startsWith('.') && !allowedHiddenFiles.has(name)) {
     return true;
   }
 

@@ -81,7 +81,7 @@ export async function executeTool(toolName: string, toolArgs: Record<string, any
     // Call the function with the appropriate arguments based on the tool
     switch (toolName) {
       case 'read_file':
-        return await toolFunction(toolArgs.file_path, toolArgs.start_line, toolArgs.end_line);
+	return await toolFunction(toolArgs.file_path, toolArgs.start_line, toolArgs.end_line, toolArgs.line_numbers ?? true);
       case 'create_file':
         return await toolFunction(toolArgs.file_path, toolArgs.content, toolArgs.file_type, toolArgs.overwrite);
       case 'edit_file':

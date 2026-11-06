@@ -18,7 +18,7 @@ describe('LocalToolBackend', () => {
 		setWorkspaceRoot(cwd);
 		writeFileSync(join(cwd, 'hello.txt'), 'hello from workspace');
 		const backend = new LocalToolBackend();
-		const result = await backend.execute('read_file', { file_path: 'hello.txt' });
+		const result = await backend.execute('read_file', { file_path: 'hello.txt', line_numbers: false });
 		expect(result.success).toBe(true);
 		expect(result.content).toBe('hello from workspace');
 	});

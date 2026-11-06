@@ -11,6 +11,7 @@ import { setWorkspaceRoot } from '../src/tools/workspace-path.ts';
 const previousCwd = process.cwd();
 
 afterEach(() => {
+	process.chdir(previousCwd);
 	setWorkspaceRoot(previousCwd);
 });
 
@@ -24,7 +25,7 @@ describe('RemoteToolBackend', () => {
 		const workerDone = runToolWorker({ cwd, input: toWorker, output: fromWorker });
 		const backend = new RemoteToolBackend({ input: fromWorker, output: toWorker });
 
-		const result = await backend.execute('read_file', { file_path: 'note.txt' });
+		const result = await backend.execute('read_file', { file_path: 'note.txt', line_numbers: false });
 		expect(result.success).toBe(true);
 		expect(result.content).toBe('rpc-ok');
 

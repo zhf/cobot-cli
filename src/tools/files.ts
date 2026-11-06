@@ -52,7 +52,7 @@ function jailOrError(filePath: string): string | ToolResult {
 /**
  * Read the contents of a file, optionally specifying line range
  */
-export async function readFile(filePath: string, startLine?: number, endLine?: number): Promise<ToolResult> {
+export async function readFile(filePath: string, startLine?: number, endLine?: number, lineNumbers = true): Promise<ToolResult> {
   try {
     const jailed = jailOrError(filePath);
     if (typeof jailed !== 'string') {
@@ -95,7 +95,7 @@ export async function readFile(filePath: string, startLine?: number, endLine?: n
       }
 
       const selectedLines = lines.slice(startIndex, endIndex);
-      const selectedContent = selectedLines.join('\n');
+      const selectedContent = selectedLines.map((line, i) => lineNumbers ? `${startIndex + i + 1}: ${line}` : line).join('\n');
       // Add file to read tracking for partial reads too
       sessionReadFiles.add(resolvedPath);
       const message = `Read lines ${startLine}-${endIndex} from ${filePath}`;
@@ -105,7 +105,7 @@ export async function readFile(filePath: string, startLine?: number, endLine?: n
     // Add file to read tracking
     sessionReadFiles.add(resolvedPath);
     const message = `Read ${lines.length} lines from ${filePath}`;
-    return createToolResponse(true, content, message);
+    return createToolResponse(true, lineNumbers ? lines.map((line, i) => `${i + 1}: ${line}`).join('\n') : content, message);
   } catch (error) {
     if ((error as any).code === 'ENOENT') {
       return createToolResponse(false, undefined, '', 'Error: File not found');
