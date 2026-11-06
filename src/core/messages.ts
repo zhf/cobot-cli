@@ -1,3 +1,5 @@
+import type { ResponseOutputItem } from 'openai/resources/responses/responses.js';
+
 export interface ToolCall {
   id: string;
   type: string;
@@ -19,6 +21,7 @@ export interface Message {
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   reasoning?: string;
+  responseOutput?: ResponseOutputItem[];
 }
 
 export function messageContentToString(content: MessageContent | undefined | null): string {

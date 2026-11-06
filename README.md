@@ -68,15 +68,15 @@ cobot --yolo
 cobot run --yolo "fix the build"
 ```
 
-Run parallel read-only codebase exploration:
+Answer codebase questions with read-only research (evidence-backed, `path:start-end` citations). `explore` is the same agent under its historical name; the old deterministic pipeline is `explore-legacy`:
 ```bash
-cobot --agent explore
-cobot run --agent explore "find where request payloads are assembled"
+cobot --agent research
+cobot run --agent research "how are request payloads assembled and validated?"
 ```
 
-Stream structured progress events for machine consumption:
+Stream structured events for machine consumption (`tool` events for research; `progress` phases for `explore-legacy`):
 ```bash
-cobot run --agent explore --output ndjson "find where request payloads are assembled"
+cobot run --agent research --output ndjson "find where request payloads are assembled"
 ```
 
 Resume the latest saved interactive session:
@@ -151,6 +151,7 @@ Options:
 cobot config get
 cobot config set apikey <key>
 cobot config set baseurl <url>
+cobot config set openaiApi <chat-completions|responses>
 cobot config set model <model>
 cobot config set theme <dark|light>
 cobot config set extraRequest '{"reasoning_effort":"low"}'
@@ -158,6 +159,7 @@ cobot config set seeyonChatApiKey <key>
 cobot config set seeyonChatEndpoint https://seeyon.chat
 cobot config clear apikey
 cobot config clear baseurl
+cobot config clear openaiApi
 cobot config clear extraRequest
 cobot config clear seeyonChatApiKey
 cobot config clear seeyonChatEndpoint
@@ -178,6 +180,44 @@ You can also run `cobot` and use the `/apikey` command interactively.
 cobot config set baseurl https://api.openai.com/v1
 ```
 You can also use `/baseurl` inside interactive chat. This allows you to use custom OpenAI-compatible APIs like BigModel, Groq, etc.
+
+#### OpenAI Responses API
+
+Chat Completions remains the default for existing OpenAI-compatible providers.
+For models that require Responses for tool calling, select the API explicitly:
+
+```bash
+cobot config set openaiApi responses
+cobot config set baseurl https://api.openai.com/v1
+cobot config set model gpt-6.1-sol
+cobot config set extraRequest '{"reasoning":{"effort":"low"}}'
+```
+
+For Azure's v1 API, use `https://YOUR-RESOURCE.openai.azure.com/openai/v1/`
+and your deployment name as the model. Cobot uses the configured URL as-is.
+The corresponding JSON property is `"openaiApi": "responses"`; the environment
+fallback is `COBOT_OPENAI_API=responses`. Config files take priority. Use
+`cobot config set openaiApi chat-completions` to select the legacy path.
+
+Responses supports streaming text, function tools, images, usage reporting,
+and the existing 50-round agent budget. Conversation state is kept locally with
+`store: false`; complete output items, including encrypted reasoning, are carried
+through tool rounds and session save/restore. Tool calls execute only after a
+completed response; failed, incomplete, or truncated streams raise an error.
+Existing tool schemas remain non-strict unless they explicitly enable strict mode.
+
+Responses uses `max_output_tokens` and does not inherit the CLI's temperature
+setting, since reasoning models may reject it. A model that supports temperature
+can opt in through `extraRequest.temperature`. Use Responses-native fields in
+`extraRequest`; legacy `reasoning_effort` is also mapped to `reasoning.effort`.
+The provider-specific `thinking` option is not sent to Responses; configure
+`reasoning` instead. The adapter owns input, output limits, streaming and local
+conversation state, so `previous_response_id` and `conversation` are not used.
+
+Implementation references: [migration guide](https://developers.openai.com/api/docs/guides/migrate-to-responses),
+[function calling](https://developers.openai.com/api/docs/guides/function-calling),
+and [preserving reasoning items](https://developers.openai.com/api/docs/guides/reasoning#keeping-reasoning-items-in-context).
+
 
 3. **Select your model**:
 ```bash
@@ -332,7 +372,8 @@ You can specify the model to use either through the `/model` command during chat
 - Tool execution approval system for potentially dangerous operations
 - Session auto-approval toggle (Tab on empty input)
 - YOLO mode (`--yolo` or `/yolo`) for approval-free tool execution
-- Explore agent (`--agent explore` or `/agent explore`) for parallel read-only codebase search with automatic skill injection
+- Research agent (`--agent research`, alias `explore`) for read-only codebase research: parallel read tools, compact tool output, repository orientation, `file:line` citations
+- Legacy explore pipeline (`--agent explore-legacy`) for deterministic parallel file discovery with automatic skill injection
 - Coding agent cycling with Shift+Tab
 - Command execution safety limits (no long-running processes)
 - Secure storage of API keys with restrictive file permissions
@@ -352,11 +393,11 @@ Saved sessions include the assistant context, visible transcript, input history,
 | `type` | Description | Fields |
 |--------|-------------|--------|
 | `progress` | Explore pipeline stage update | `phase`, `round`, `totalRounds`, `workersCompleted`, `totalWorkers`, `rerankCandidates`, `adaptiveSkipped`, `fileCount`, `evidenceCount`, `skillsLoaded` |
-| `tool` | Tool execution (non-explore agents) | `name`, `status` (`started` or `completed`) |
+| `tool` | Tool execution (all tool-loop agents, including `research`/`explore`) | `name`, `status` (`started` or `completed`) |
 | `result` | Final answer | `content` |
 | `error` | Error | `message` |
 
-#### Progress Phases (explore agent)
+#### Progress Phases (`explore-legacy` agent)
 
 | `phase` | Description |
 |---------|-------------|

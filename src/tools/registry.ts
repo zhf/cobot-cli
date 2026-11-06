@@ -111,6 +111,7 @@ export async function executeTool(toolName: string, toolArgs: Record<string, any
           toolArgs.max_results,
           toolArgs.context_lines,
           toolArgs.group_by_file,
+          toolArgs.max_matches_per_file,
         );
       case 'execute_command':
         return await toolFunction(toolArgs.command, toolArgs.command_type, toolArgs.working_directory, toolArgs.timeout);

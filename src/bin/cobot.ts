@@ -102,6 +102,7 @@ function printConfig(): void {
   const configManager = new ConfigManager();
 
   console.log(`apikey: ${maskSecret(configManager.getApiKey())}`);
+  console.log(`openaiApi: ${configManager.getOpenAIApi()}`);
   console.log(`baseurl: ${configManager.getBaseURL() || 'not set'}`);
   console.log(`model: ${configManager.getDefaultModel() || 'not set'}`);
   console.log(`defaultAgent: ${configManager.getDefaultAgent() || 'not set'}`);
@@ -148,6 +149,11 @@ function setConfigValue(key: string, value: string): void {
     case 'api-key':
       configManager.setApiKey(value);
       console.log('API key saved.');
+      break;
+    case 'openaiapi':
+    case 'openai-api':
+      configManager.setOpenAIApi(value);
+      console.log('OpenAI API selection saved.');
       break;
     case 'baseurl':
     case 'base-url':
@@ -412,6 +418,11 @@ function clearConfigValue(key: string): void {
       configManager.clearApiKey();
       console.log('API key cleared.');
       break;
+    case 'openaiapi':
+    case 'openai-api':
+      configManager.clearOpenAIApi();
+      console.log('OpenAI API selection cleared.');
+      break;
     case 'baseurl':
     case 'base-url':
       configManager.clearBaseURL();
@@ -662,14 +673,14 @@ configCommand
 
 configCommand
   .command('set <key> <value>')
-  .description('Set a config value: apikey, baseurl, model, theme, extraRequest, seeyonChatApiKey, seeyonChatEndpoint, explore.rerank.* (model, apikey, baseurl, topN, perRole, timeoutMs, instruct), explore.thinking.* (worker, synthesis), explore.adaptive.* (minHighPriorityFiles, minDeclarationEvidence, maxLowSignalRatio), or explore.scan.* (maxFiles, recentFirst, multiRepoMinDirs, perRepoMaxFiles, ignoreDirs, honorGitignore)')
+  .description('Set a config value: apikey, baseurl, openaiApi, model, theme, extraRequest, seeyonChatApiKey, seeyonChatEndpoint, explore.rerank.* (model, apikey, baseurl, topN, perRole, timeoutMs, instruct), explore.thinking.* (worker, synthesis), explore.adaptive.* (minHighPriorityFiles, minDeclarationEvidence, maxLowSignalRatio), or explore.scan.* (maxFiles, recentFirst, multiRepoMinDirs, perRepoMaxFiles, ignoreDirs, honorGitignore)')
   .action((key: string, value: string) => {
     setConfigValue(key, value);
   });
 
 configCommand
   .command('clear <key>')
-  .description('Clear a config value: apikey, baseurl, extraRequest, seeyonChatApiKey, seeyonChatEndpoint, explore.rerank, explore.thinking, explore.adaptive, or explore.scan')
+  .description('Clear a config value: apikey, baseurl, openaiApi, extraRequest, seeyonChatApiKey, seeyonChatEndpoint, explore.rerank, explore.thinking, explore.adaptive, or explore.scan')
   .action((key: string) => {
     clearConfigValue(key);
   });

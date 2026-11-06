@@ -38,6 +38,7 @@ export async function searchFiles(
   maxResults: number = 100,
   contextLines: number = 0,
   groupByFile: boolean = false,
+  maxMatchesPerFile?: number,
 ): Promise<ToolResult> {
   try {
     let searchDir: string;
@@ -114,8 +115,9 @@ export async function searchFiles(
         const content = await fs.promises.readFile(filePath, 'utf-8');
         const lines = content.split('\n');
         const fileMatches: SearchMatch[] = [];
+        const fileLimit = maxMatchesPerFile && maxMatchesPerFile > 0 ? maxMatchesPerFile : Infinity;
 
-        for (let i = 0; i < lines.length && totalMatches < maxResults; i++) {
+        for (let i = 0; i < lines.length && totalMatches < maxResults && fileMatches.length < fileLimit; i++) {
           const line = lines[i];
           const matches = Array.from(line.matchAll(searchPatternRegex));
 

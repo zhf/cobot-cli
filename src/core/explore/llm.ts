@@ -30,6 +30,7 @@ export async function runExploreWorker(options: RunParallelExploreOptions & {
 	}
 
 	const completion = await createChatCompletion(options.client, {
+		config: options.config,
 		model: options.model,
 		messages: [
 			{
@@ -68,6 +69,7 @@ export async function synthesizeExploreResult(options: RunParallelExploreOptions
 	}
 
 	const completion = await createChatCompletion(options.client, {
+		config: options.config,
 		model: options.model,
 		messages: [
 			{

@@ -51,7 +51,10 @@ interface ExploreConfig {
   delegation?: ExploreDelegationConfig;
 }
 
+export type OpenAIApi = 'chat-completions' | 'responses';
+
 interface Config {
+  openaiApi?: OpenAIApi;
   openaiApiKey?: string;
   defaultModel?: string;
   defaultAgent?: string;
@@ -196,6 +199,7 @@ function expandConfig(config: Config): Config {
   if (config.agent) expandedConfig.agent = config.agent;
   if (config.agents) expandedConfig.agents = config.agents;
   if (config.skills) expandedConfig.skills = config.skills;
+  if (config.openaiApi) expandedConfig.openaiApi = expandEnvironmentVariables(config.openaiApi) as OpenAIApi;
   if (config.openaiBaseURL) expandedConfig.openaiBaseURL = expandEnvironmentVariables(config.openaiBaseURL);
   if (config.extraRequest) expandedConfig.extraRequest = expandEnvironmentVariables(config.extraRequest);
   if (config.seeyonChatApiKey) expandedConfig.seeyonChatApiKey = expandEnvironmentVariables(config.seeyonChatApiKey);
@@ -262,6 +266,7 @@ class ConfigManager {
     if (fileConfig.agent) mergedConfig.agent = fileConfig.agent;
     if (fileConfig.agents) mergedConfig.agents = fileConfig.agents;
     if (fileConfig.skills) mergedConfig.skills = fileConfig.skills;
+    if (fileConfig.openaiApi) mergedConfig.openaiApi = fileConfig.openaiApi;
     if (fileConfig.openaiBaseURL) mergedConfig.openaiBaseURL = fileConfig.openaiBaseURL;
     if (fileConfig.theme) mergedConfig.theme = fileConfig.theme;
     if (fileConfig.extraRequest) mergedConfig.extraRequest = fileConfig.extraRequest;
@@ -627,6 +632,27 @@ class ConfigManager {
     } catch (error) {
       throw new Error(`Failed to save theme preference: ${error}`);
     }
+  }
+
+  public getOpenAIApi(): OpenAIApi {
+    const value = this.getConfig().openaiApi || process.env.COBOT_OPENAI_API || 'chat-completions';
+    if (value !== 'chat-completions' && value !== 'responses') {
+      throw new Error('openaiApi must be chat-completions or responses');
+    }
+    return value;
+  }
+
+  public setOpenAIApi(value: string): void {
+    if (value !== 'chat-completions' && value !== 'responses') {
+      throw new Error('openaiApi must be chat-completions or responses');
+    }
+    const config = this.readConfigFromFile();
+    config.openaiApi = value;
+    this.writeConfigToFile(config);
+  }
+
+  public clearOpenAIApi(): void {
+    this.removeConfigValue('openaiApi', 'Failed to clear API selection:');
   }
 
   public getExtraRequestString(): string | null {

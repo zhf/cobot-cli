@@ -1,3 +1,4 @@
+import type ConfigManager from '../../config/ConfigManager.js';
 import type OpenAI from 'openai';
 import type { Message } from '../messages.js';
 import type { ExploreRerankConfig, ExploreThinkingConfig, ExploreAdaptiveConfig, ExploreScanConfig, ExploreDelegationConfig } from '../../config/ConfigManager.js';
@@ -15,6 +16,7 @@ export interface ExploreWorkerResult {
 }
 
 export interface RunParallelExploreOptions {
+	config?: ConfigManager;
 	client: OpenAI;
 	model: string;
 	temperature: number;

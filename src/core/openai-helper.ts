@@ -1,8 +1,9 @@
 import OpenAI from 'openai';
-import type { ClientOptions } from 'openai';
 import ConfigManager from '../config/ConfigManager.js';
+import { buildResponsesPayload, createResponseCompletion, streamResponseCompletion, type ResponseCompletionChunk } from './responses.js';
 
 export interface ChatCompletionOptions {
+  config?: ConfigManager;
   model: string;
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   temperature?: number;
@@ -33,12 +34,15 @@ export function buildChatCompletionPayload(options: ChatCompletionOptions): Reco
     stream_options,
     extraBody,
   } = options;
-  const configManager = new ConfigManager();
+  const configManager = options.config ?? new ConfigManager();
   const completionOptions: Record<string, unknown> = {
     ...configManager.getExtraRequest(),
     ...(extraBody || {}),
     model,
-    messages,
+    messages: messages.map(message => {
+      const { responseOutput: _output, ...wireMessage } = message as typeof message & { responseOutput?: unknown };
+      return wireMessage;
+    }),
     temperature,
     stream,
     ...getTokenLimitOption(model, max_tokens),
@@ -59,10 +63,17 @@ export function buildChatCompletionPayload(options: ChatCompletionOptions): Reco
   return completionOptions;
 }
 
+export function buildModelRequestPayload(options: ChatCompletionOptions): Record<string, unknown> {
+  return (options.config ?? new ConfigManager()).getOpenAIApi() === 'responses'
+    ? buildResponsesPayload(options)
+    : buildChatCompletionPayload(options);
+}
+
 export async function createChatCompletion(
   client: OpenAI,
   options: ChatCompletionOptions
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  if ((options.config ?? new ConfigManager()).getOpenAIApi() === 'responses') return createResponseCompletion(client, options);
   const completionOptions = buildChatCompletionPayload(options);
 
   const requestConfig: { signal?: AbortSignal } = {};
@@ -76,7 +87,8 @@ export async function createChatCompletion(
 export async function createStreamingChatCompletion(
   client: OpenAI,
   options: ChatCompletionOptions
-): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+): Promise<AsyncIterable<ResponseCompletionChunk>> {
+  if ((options.config ?? new ConfigManager()).getOpenAIApi() === 'responses') return streamResponseCompletion(client, options);
   const completionOptions = buildChatCompletionPayload({ ...options, stream: true });
 
   const requestConfig: { signal?: AbortSignal } = {};

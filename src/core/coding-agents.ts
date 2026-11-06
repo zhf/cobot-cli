@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type OpenAI from 'openai';
 import type { ToolSchema } from '../tools/schemas/index.js';
+import { RESEARCH_AGENT_NAME, RESEARCH_DESCRIPTION, RESEARCH_PROMPT } from './research.js';
 
 export type AgentMode = 'primary' | 'subagent' | 'all';
 export type PermissionAction = 'allow' | 'ask' | 'deny';
@@ -37,12 +38,14 @@ interface MarkdownAgentData extends CodingAgentConfig {
 }
 
 const DEFAULT_BUILD_DESCRIPTION = 'Default coding agent with normal tool access and approval prompts.';
-const DEFAULT_EXPLORE_DESCRIPTION = 'Read-only parallel codebase exploration agent for finding relevant files and evidence.';
+const DEFAULT_EXPLORE_DESCRIPTION = 'Read-only codebase research agent (same as research; kept as the default name for integrations).';
+const DEFAULT_EXPLORE_LEGACY_DESCRIPTION = 'Legacy deterministic parallel exploration pipeline for finding likely files by identifier.';
 const DEFAULT_PLAN_DESCRIPTION = 'Read-only planning agent for analysis without file or command changes.';
 const DEFAULT_YOLO_DESCRIPTION = 'Approval-free coding agent that allows all tools without prompts.';
 const AGENT_DIRECTORY_NAME = 'agents';
 
 export const EXPLORE_AGENT_NAME = 'explore';
+export const EXPLORE_LEGACY_AGENT_NAME = 'explore-legacy';
 export const YOLO_AGENT_NAME = 'yolo';
 
 const TOOL_PERMISSIONS: Record<string, PermissionKey> = {
@@ -105,6 +108,19 @@ const EXPLORE_PERMISSIONS: Required<PermissionConfig> = {
   media: 'deny',
   web: 'deny',
   interaction: 'allow',
+  skill: 'allow',
+  mcp: 'deny',
+};
+
+const RESEARCH_PERMISSIONS: Required<PermissionConfig> = {
+  read: 'allow',
+  edit: 'deny',
+  bash: 'deny',
+  task: 'deny',
+  database: 'deny',
+  media: 'deny',
+  web: 'deny',
+  interaction: 'deny',
   skill: 'allow',
   mcp: 'deny',
 };
@@ -219,6 +235,14 @@ function builtInAgents(): Record<string, CodingAgentInfo> {
       name: EXPLORE_AGENT_NAME,
       description: DEFAULT_EXPLORE_DESCRIPTION,
       mode: 'primary',
+      prompt: RESEARCH_PROMPT,
+      permission: clonePermissions(RESEARCH_PERMISSIONS),
+      native: true,
+    },
+    [EXPLORE_LEGACY_AGENT_NAME]: {
+      name: EXPLORE_LEGACY_AGENT_NAME,
+      description: DEFAULT_EXPLORE_LEGACY_DESCRIPTION,
+      mode: 'primary',
       prompt: [
         'You are a read-only codebase exploration coordinator.',
         'For codebase search requests, use the internal parallel exploration workflow to find likely files, evidence, dead ends, and next steps.',
@@ -226,6 +250,14 @@ function builtInAgents(): Record<string, CodingAgentInfo> {
         'Prefer evidence-backed paths and line references over broad guesses.',
       ].join('\n'),
       permission: clonePermissions(EXPLORE_PERMISSIONS),
+      native: true,
+    },
+    [RESEARCH_AGENT_NAME]: {
+      name: RESEARCH_AGENT_NAME,
+      description: RESEARCH_DESCRIPTION,
+      mode: 'primary',
+      prompt: RESEARCH_PROMPT,
+      permission: clonePermissions(RESEARCH_PERMISSIONS),
       native: true,
     },
     plan: {

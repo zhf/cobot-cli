@@ -282,6 +282,12 @@ export const SEARCH_FILES_SCHEMA: ToolSchema = {
           description: 'Group results by filename',
           default: false,
         },
+        max_matches_per_file: {
+          type: 'integer',
+          description: 'Cap matches reported per file so one noisy file cannot consume max_results (optional)',
+          minimum: 1,
+          maximum: 1000,
+        },
       },
       required: ['pattern'],
     },

@@ -6,20 +6,23 @@ import { ALL_TOOL_SCHEMAS, type ToolSchema } from '../tools/schemas/index.js';
 import ConfigManager from '../config/ConfigManager.js';
 import { Message, ToolCall, ApiError, messageContentToString } from './messages.js';
 import { debugLog, setDebugLoggingEnabled } from './logger.js';
-import { buildChatCompletionPayload, createStreamingChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
+import { buildModelRequestPayload, createStreamingChatCompletion, type ChatCompletionOptions } from './openai-helper.js';
 import { executeToolCall, ToolExecutorCallbacks, ToolExecutorOptions } from './tool-executor.js';
+import type { ToolResult } from '../tools/files.js';
 import type { ToolBackend } from '../tools/backend.js';
 import { LocalToolBackend } from '../tools/backend.js';
-import { isInsideWorkspace, setWorkspaceRoot } from '../tools/workspace-path.js';
+import { getWorkspaceRoot, isInsideWorkspace, setWorkspaceRoot } from '../tools/workspace-path.js';
 import { QuestionAnswer, QuestionPrompt } from '../tools/question.js';
 import { buildSkillContextForExplore, findMatchingSkillsForPrompt, listSkills, skillDescriptionSuffix, skillSystemPrompt } from './skills.js';
 import {
   CodingAgentInfo,
-  EXPLORE_AGENT_NAME,
+  EXPLORE_LEGACY_AGENT_NAME,
   getToolPermissionAction,
+  getToolPermissionKey,
   loadCodingAgents,
   resolveCodingAgent,
 } from './coding-agents.js';
+import { RESEARCH_LOOP_AGENTS, applyResearchToolDefaults, buildResearchOrientation, isResearchToolAllowed, renderToolResultForModel } from './research.js';
 import { runParallelExplore, type ExploreProgressEvent } from './explore-runner.js';
 import { getMCPToolSchemas } from '../mcp/tools.js';
 import { getMCPManager, initializeMCPServers } from '../mcp/client.js';
@@ -86,6 +89,7 @@ export class Agent {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    cached_prompt_tokens?: number;
     total_time?: number;
   }) => void;
 
@@ -117,20 +121,27 @@ export class Agent {
     // Set debug mode
     setDebugLoggingEnabled(debug || false);
 
-    // Build system message
-    if (systemMessage) {
-      this.systemMessage = systemMessage;
-    } else if (codingAgent.prompt) {
-      this.systemMessage = this.buildAgentSystemMessage(codingAgent.prompt);
-    } else {
-      this.systemMessage = this.buildDefaultSystemMessage();
-    }
+    this.systemMessage = this.composeSystemMessage();
 
     // Add system message to conversation
     this.messages.push({ role: 'system', content: this.systemMessage });
     this.loadProjectContextMessages();
 
     this.baseMessages = cloneMessages(this.messages);
+  }
+
+  private isResearchAgent(): boolean {
+    return RESEARCH_LOOP_AGENTS.has(this.codingAgent.name);
+  }
+
+  /** Research keeps its method even when a caller supplies operator instructions; other agents are replaced by them. */
+  private composeSystemMessage(): string {
+    const agentPrompt = this.codingAgent.prompt
+      ? this.buildAgentSystemMessage(this.codingAgent.prompt)
+      : this.buildDefaultSystemMessage();
+    if (!this.customSystemMessage) return agentPrompt;
+    if (!this.isResearchAgent()) return this.customSystemMessage;
+    return `${agentPrompt}\nOperator instructions (apply together with the research method above):\n${this.customSystemMessage.trim()}\n`;
   }
 
   static async create(
@@ -257,6 +268,10 @@ ${skills ? `\n${skills}\n` : ''}
   }
 
   private loadProjectContextMessages(): void {
+    if (this.isResearchAgent()) {
+      const orientation = buildResearchOrientation(getWorkspaceRoot());
+      if (orientation) this.messages.push({ role: 'system', content: orientation });
+    }
     try {
       const customContextFilePath = process.env.OPENAI_CONTEXT_FILE;
       const baseDir = process.env.OPENAI_CONTEXT_DIR || process.cwd();
@@ -295,7 +310,7 @@ ${skills ? `\n${skills}\n` : ''}
     onStreamStart?: () => string;
     onStreamUpdate?: (messageId: string, content: string, reasoning?: string) => void;
     onMaxIterations?: (maxIterations: number) => Promise<boolean>;
-    onApiUsage?: (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; total_time?: number }) => void;
+    onApiUsage?: (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cached_prompt_tokens?: number; total_time?: number }) => void;
     onExploreProgress?: (event: ExploreProgressEvent) => void;
     onError?: (error: string) => Promise<boolean>;
   }) {
@@ -315,6 +330,7 @@ ${skills ? `\n${skills}\n` : ''}
 
   private async createStreamingResponse(options: ChatCompletionOptions): Promise<{
     content: string;
+    responseOutput?: Message['responseOutput'];
     reasoning?: string;
     toolCalls?: ToolCall[];
     streamedMessageId?: string;
@@ -323,6 +339,7 @@ ${skills ? `\n${skills}\n` : ''}
       prompt_tokens: number;
       completion_tokens: number;
       total_tokens: number;
+      cached_prompt_tokens?: number;
     };
   }> {
     if (!this.client) {
@@ -338,18 +355,21 @@ ${skills ? `\n${skills}\n` : ''}
         arguments: string;
       };
     }>();
+    let responseOutput: Message['responseOutput'];
     let content = '';
     let reasoning = '';
     let streamedMessageId: string | undefined;
     let finishReason: string | null | undefined;
-    let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
+    let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cached_prompt_tokens?: number } | undefined;
 
     for await (const chunk of stream) {
+      if (chunk.responseOutput) responseOutput = chunk.responseOutput;
       if (chunk.usage) {
         usage = {
           prompt_tokens: chunk.usage.prompt_tokens,
           completion_tokens: chunk.usage.completion_tokens,
           total_tokens: chunk.usage.total_tokens,
+          cached_prompt_tokens: chunk.usage.prompt_tokens_details?.cached_tokens,
         };
       }
 
@@ -410,6 +430,7 @@ ${skills ? `\n${skills}\n` : ''}
 
     return {
       content,
+      responseOutput,
       reasoning: reasoning || undefined,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       streamedMessageId,
@@ -418,8 +439,31 @@ ${skills ? `\n${skills}\n` : ''}
     };
   }
 
+  /** Normalizes a model tool call; research fills in discovery-friendly search defaults the model omitted. */
+  private prepareToolCall(toolCallRequest: ToolCall): ToolCall {
+    const name = toolCallRequest.function.name.startsWith('repo_browser.')
+      ? toolCallRequest.function.name.slice('repo_browser.'.length)
+      : toolCallRequest.function.name;
+    let args = toolCallRequest.function.arguments;
+    if (this.isResearchAgent()) {
+      try {
+        const parsed = args ? JSON.parse(args) as Record<string, unknown> : {};
+        args = JSON.stringify(applyResearchToolDefaults(name, parsed));
+      } catch {
+        // Leave truncated arguments untouched so the executor reports the parse error.
+      }
+    }
+    return { id: toolCallRequest.id, type: toolCallRequest.type, function: { name, arguments: args } };
+  }
+
+  private isParallelSafeTool(toolName: string): boolean {
+    if (this.isResearchAgent() && !isResearchToolAllowed(toolName)) return false;
+    return getToolPermissionKey(toolName) === 'read' && getToolPermissionAction(toolName, this.codingAgent) === 'allow';
+  }
+
   private getToolSchemas(): OpenAI.Chat.Completions.ChatCompletionTool[] {
     const builtinSchemas: ToolSchema[] = ALL_TOOL_SCHEMAS.filter((toolSchema) => getToolPermissionAction(toolSchema.function.name, this.codingAgent) !== 'deny')
+      .filter((toolSchema) => !this.isResearchAgent() || isResearchToolAllowed(toolSchema.function.name))
       .map((toolSchema) => {
       if (toolSchema.function.name !== 'skill') {
         return toolSchema;
@@ -548,9 +592,7 @@ ${skills ? `\n${skills}\n` : ''}
       this.temperature = nextAgent.temperature;
     }
 
-    this.systemMessage = this.customSystemMessage ?? (nextAgent.prompt
-      ? this.buildAgentSystemMessage(nextAgent.prompt)
-      : this.buildDefaultSystemMessage());
+    this.systemMessage = this.composeSystemMessage();
     this.messages = [{ role: 'system', content: this.systemMessage }];
     this.loadProjectContextMessages();
     this.baseMessages = cloneMessages(this.messages);
@@ -591,9 +633,7 @@ ${skills ? `\n${skills}\n` : ''}
 
   private updateDefaultSystemMessageForModel(): void {
     const previousSystemMessage = this.systemMessage;
-    const newSystemMessage = this.customSystemMessage ?? (this.codingAgent.prompt
-      ? this.buildAgentSystemMessage(this.codingAgent.prompt)
-      : this.buildDefaultSystemMessage());
+    const newSystemMessage = this.composeSystemMessage();
     this.systemMessage = newSystemMessage;
     for (const messages of [this.baseMessages, this.messages]) {
       const systemMessage = messages.find(msg => msg.role === 'system' && messageContentToString(msg.content) === previousSystemMessage);
@@ -652,6 +692,7 @@ ${skills ? `\n${skills}\n` : ''}
 
     const result = await runParallelExplore({
       client: this.client,
+      config: this.configManager,
       model: this.model,
       temperature: this.temperature,
       messages: this.messages,
@@ -727,7 +768,9 @@ ${skills ? `\n${skills}\n` : ''}
     this.messages.push({ role: 'user', content: userContent });
 
     const maxToolIterations = 50;
+    const maxConsecutiveApiFailures = 3;
     let currentIteration = 0;
+    let consecutiveApiFailures = 0;
 
     while (true) { // Outer loop for iteration reset
       while (currentIteration < maxToolIterations) {
@@ -744,7 +787,7 @@ ${skills ? `\n${skills}\n` : ''}
             throw new Error('OpenAI client not initialized');
           }
 
-          if (this.codingAgent.name === EXPLORE_AGENT_NAME) {
+          if (this.codingAgent.name === EXPLORE_LEGACY_AGENT_NAME) {
             await this.chatWithParallelExplore(userInput);
             return;
           }
@@ -774,6 +817,7 @@ ${skills ? `\n${skills}\n` : ''}
 	    ].join('\n'),
 	  };
           const options: ChatCompletionOptions = {
+	    config: this.configManager,
             model: this.model,
 	    messages: [...this.messages, budgetMessage] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
             temperature: this.temperature,
@@ -786,9 +830,9 @@ ${skills ? `\n${skills}\n` : ''}
           };
 
           // Prepare API request payload for debug logging
-          const apiRequestPayload = buildChatCompletionPayload(options);
+	  const apiRequestPayload = buildModelRequestPayload(options);
 
-          debugLog('OpenAI chat completion request payload:', apiRequestPayload);
+	  debugLog('OpenAI model request payload:', apiRequestPayload);
 
           // Log equivalent curl command
           this.requestCount++;
@@ -798,6 +842,7 @@ ${skills ? `\n${skills}\n` : ''}
           }
 
           const response = await this.createStreamingResponse(options);
+          consecutiveApiFailures = 0;
 
           debugLog('Full streaming API response accumulated:', response);
           debugLog('Response usage:', response.usage);
@@ -815,6 +860,7 @@ ${skills ? `\n${skills}\n` : ''}
               prompt_tokens: response.usage.prompt_tokens,
               completion_tokens: response.usage.completion_tokens,
               total_tokens: response.usage.total_tokens,
+              cached_prompt_tokens: response.usage.cached_prompt_tokens,
             });
           }
           debugLog('Message content length:', message.content?.length || 0);
@@ -838,6 +884,7 @@ ${skills ? `\n${skills}\n` : ''}
             const assistantMsg: Message = {
               role: 'assistant',
               content: message.content || '',
+	      responseOutput: response.responseOutput,
             };
             assistantMsg.tool_calls = message.tool_calls?.map(tc => ({
               id: tc.id,
@@ -853,6 +900,23 @@ ${skills ? `\n${skills}\n` : ''}
             // tool_calls message with no other roles in between (OpenAI/Azure requirement).
             const pendingVisionImages: Array<{ mimeType: string; base64: string }> = [];
             const toolCalls = message.tool_calls || [];
+            const callbacks: ToolExecutorCallbacks = {
+              onToolStart: this.onToolStart,
+              onToolEnd: this.onToolEnd,
+              onToolApproval: this.onToolApproval,
+              onQuestion: this.onQuestion,
+            };
+            const executorOptions: ToolExecutorOptions = {
+              sessionAutoApprove: this.sessionAutoApprove,
+              isInterrupted: this.isInterrupted,
+              codingAgent: this.codingAgent,
+              toolBackend: this.toolBackend,
+            };
+            const prepared = toolCalls.map((toolCallRequest) => this.prepareToolCall(toolCallRequest));
+            // Read-only calls that need no approval are independent: run them concurrently, keep result order.
+            const parallelResults = prepared.length > 1 && prepared.every((toolCall) => this.isParallelSafeTool(toolCall.function.name))
+              ? await Promise.all(prepared.map((toolCall) => executeToolCall(toolCall, callbacks, executorOptions)))
+              : null;
 
             for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
               const toolCallRequest = toolCalls[toolIndex];
@@ -875,29 +939,12 @@ ${skills ? `\n${skills}\n` : ''}
                 return;
               }
 
-              const toolCall = {
-                id: toolCallRequest.id,
-                type: toolCallRequest.type,
-                function: {
-                  name: toolCallRequest.function.name,
-                  arguments: toolCallRequest.function.arguments
-                }
-              };
-              const callbacks: ToolExecutorCallbacks = {
-                onToolStart: this.onToolStart,
-                onToolEnd: this.onToolEnd,
-                onToolApproval: this.onToolApproval,
-                onQuestion: this.onQuestion,
-              };
-              
-              const options: ToolExecutorOptions = {
-                sessionAutoApprove: this.sessionAutoApprove,
-                isInterrupted: this.isInterrupted,
-                codingAgent: this.codingAgent,
-                toolBackend: this.toolBackend,
-              };
-              
-              const result = await executeToolCall(toolCall, callbacks, options);
+              const toolCall = prepared[toolIndex];
+              const result: ToolResult = this.isResearchAgent() && !isResearchToolAllowed(toolCall.function.name)
+                ? { success: false, error: `Tool ${toolCall.function.name} is not available to the research agent` }
+                : parallelResults
+                  ? parallelResults[toolIndex]
+                  : await executeToolCall(toolCall, callbacks, { ...executorOptions, isInterrupted: this.isInterrupted });
               const visionImage = (result as { visionImage?: { mimeType: string; base64: string } }).visionImage;
               const { visionImage: _omitVision, ...toolPayload } = result as unknown as Record<string, unknown>;
 
@@ -905,7 +952,9 @@ ${skills ? `\n${skills}\n` : ''}
               this.messages.push({
                 role: 'tool',
                 tool_call_id: toolCallRequest.id,
-                content: JSON.stringify(toolPayload),
+                content: this.isResearchAgent()
+                  ? renderToolResultForModel(toolCall.function.name, toolPayload as unknown as ToolResult)
+                  : JSON.stringify(toolPayload),
               });
 
               if (visionImage?.base64) {
@@ -979,6 +1028,7 @@ ${skills ? `\n${skills}\n` : ''}
           this.messages.push({
             role: 'assistant',
             content,
+	    responseOutput: response.responseOutput,
           });
 
           debugLog('Final response added to conversation history, exiting chat loop');
@@ -1049,6 +1099,11 @@ ${skills ? `\n${skills}\n` : ''}
               return;
             }
           } else {
+            // Unattended: identical provider failures must not consume the whole round budget.
+            consecutiveApiFailures++;
+            if (consecutiveApiFailures >= maxConsecutiveApiFailures) {
+              throw new Error(`${errorMessage} (${consecutiveApiFailures} consecutive failures)`);
+            }
             // No error callback available - use old behavior
             // Add error context to conversation for model to see and potentially recover
             this.messages.push({
