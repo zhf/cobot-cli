@@ -101,3 +101,18 @@ test('unattended runs stop after repeated identical provider failures instead of
 	await expect(agent.chat('Anything')).rejects.toThrow(/Model Not Exist.*3 consecutive failures/);
 	expect(requests).toHaveLength(3);
 }, 15000);
+
+test('a dangling symlink under .agents/skills does not break agent creation', async () => {
+	const { mkdirSync: mk, symlinkSync } = await import('node:fs');
+	mk(join(root, '.agents', 'skills'), { recursive: true });
+	symlinkSync('../../missing-target', join(root, '.agents', 'skills', 'dangling'));
+	process.chdir(root);
+	try {
+		respond = () => ({ content: 'ok' });
+		const agent = await createAgent();
+		await agent.chat('hello');
+		expect(requests).toHaveLength(1);
+	} finally {
+		process.chdir(originalCwd);
+	}
+});

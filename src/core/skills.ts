@@ -22,6 +22,14 @@ interface ParsedSkillFrontmatter {
 const SKILL_FILE_NAME = 'SKILL.md';
 const SAMPLE_FILE_LIMIT = 10;
 
+function statOrNull(filePath: string): fs.Stats | null {
+  try {
+    return fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
 function expandPath(value: string): string {
   if (value === '~') {
     return os.homedir();
@@ -41,12 +49,13 @@ function listSkillFiles(directory: string): string[] {
     .flatMap((entry) => {
       const entryPath = path.join(directory, entry.name);
       // Follow symlinks: fs.Dirent.isDirectory() returns false for symlinks,
-      // so use fs.statSync to check the resolved target.
-      const isDir = entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(entryPath).isDirectory());
+      // so stat the resolved target. Dangling links (common in synced checkouts) are skipped.
+      const target = entry.isSymbolicLink() ? statOrNull(entryPath) : null;
+      const isDir = entry.isDirectory() || Boolean(target?.isDirectory());
       if (isDir) {
         return listSkillFiles(entryPath);
       }
-      const isFile = entry.isFile() || (entry.isSymbolicLink() && fs.statSync(entryPath).isFile());
+      const isFile = entry.isFile() || Boolean(target?.isFile());
       return isFile && entry.name === SKILL_FILE_NAME ? [entryPath] : [];
     });
 }
