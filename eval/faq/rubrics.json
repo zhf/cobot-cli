@@ -1,0 +1,66 @@
+{
+  "3": [
+    {
+      "id": "direct_search",
+      "description": "Identify POST /api/search mode rag as direct evidence retrieval for caller-owned generation; knowledge:search required."
+    },
+    {
+      "id": "passages",
+      "description": "Use nonempty content of text_span hits as evidence."
+    },
+    {
+      "id": "citations",
+      "description": "Preserve parent source kind/id/title and available chunk IDs/indexes; do not confuse passage ID with parent document ID."
+    },
+    {
+      "id": "contract",
+      "description": "GET supports browse only; total counts returned hits, not all matching library sources."
+    },
+    {
+      "id": "generation",
+      "description": "Assign supplied evidence labels and constrain generated references; insufficient evidence when results are empty."
+    },
+    {
+      "id": "full_text",
+      "description": "Optional full document text requires knowledge:read and view=full, using line-window continuation fields."
+    },
+    {
+      "id": "boundaries",
+      "description": "Filters cannot broaden credential grants; optional qualification/relevance is not factual truth verification."
+    }
+  ],
+  "4": [
+    {
+      "id": "upload_auth",
+      "description": "Multipart POST /api/documents/upload with file and visibility; personal/CLI write credential required, restricted keys cannot upload."
+    },
+    {
+      "id": "accepted",
+      "description": "201 means stored/queued for processable documents, not processing success; save document.id."
+    },
+    {
+      "id": "poll",
+      "description": "Poll processing.checkStatusAt with same authorized credential; checkInterval suggests five seconds."
+    },
+    {
+      "id": "states",
+      "description": "Track pending -> processing -> completed/failed and do not equate HTTP upload/poll success with processing success."
+    },
+    {
+      "id": "execution",
+      "description": "DOCUMENT_PROCESSING_MODE inline default vs worker; atomic conditional pending->processing claim prevents simultaneous claims."
+    },
+    {
+      "id": "pipeline",
+      "description": "Processing extracts text and delegates outline/classification/summary/chunk/embedding indexing; some uploads omit processing."
+    },
+    {
+      "id": "backpressure",
+      "description": "503 queue saturation with Retry-After; auth rate limits can yield 429."
+    },
+    {
+      "id": "duplicates",
+      "description": "Processing claim does not make upload idempotent; check whether created after lost response before blindly retrying."
+    }
+  ]
+}

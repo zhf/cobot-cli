@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1,
+    "question": "Easy — What does Wiki provide, and where should I look in the codebase?\n"
+  },
+  {
+    "id": 2,
+    "question": "Basic — How should my application authenticate, and what can its key access?\n"
+  },
+  {
+    "id": 3,
+    "question": "Intermediate — How do I retrieve evidence for my own answer generator and preserve citations?\n"
+  },
+  {
+    "id": 4,
+    "question": "Advanced — How can a sync service upload a document and know when processing has finished?\n"
+  },
+  {
+    "id": 5,
+    "question": "Hard — How do I consume Wiki's stateless research agent while preserving permissions and handling partial streams?\n"
+  },
+  {
+    "id": 6,
+    "question": "Hard — With the configuration below, which URL, key, tenant database, and authentication result does the CLI select?\n**Scenario:** Consider a normal HTTP invocation with these inputs:\n\n| Input | Value |\n| --- | --- |\n| Command | `wiki --base-url https://b.example.com --json whoami --verify` |\n| Local `.wiki.json` | Base URL `https://a.example.com`, restricted application key A |\n| Global configuration | Base URL `https://b.example.com`, restricted application key B |\n| Environment | `WIKI_BASE_URL`, `WIKI_API_KEY`, and `WIKI_UNIX_SOCKET` are unset |\n| CLI credential override | No `--api-key` flag |\n| Server tenancy | Multi-tenant mode enabled; `b.example.com` maps to tenant `b`, whose database is configured |\n| Incoming routing headers | `host: b.example.com`; no `x-forwarded-host` or `x-tenant-slug` |\n| Stored credentials | A's hash exists only in tenant `a`; B's hash exists only in tenant `b`. Both keys have the `wiki_app_` prefix and scope `knowledge:read`, are active and unexpired, and have active owners. |\n\nAssume successful network/database operations, no redirects, and available quotas.\nReport the raw API status/code separately from the CLI error code. Then determine\nwhat changes if only `WIKI_API_KEY` is set to B before repeating the command."
+  },
+  {
+    "id": 7,
+    "question": "Hard — Is the specified entry chunk eligible for restricted semantic retrieval or qualification hydration, and why?\n**Scenario:** A restricted key has `knowledge:search` and `knowledge:read`, grants\nentry E, and its owner can read E. E is a document-kind entry with title `Notes`,\nempty summary/aliases/tags, a text block `Public paragraph`, and a card-reference\nblock pointing to C. C's title is `Card title` and its body is `Card body`.\n\nIndexing has already succeeded. E has exactly one indexed chunk with content\n`Public paragraph\\n\\n# Card title\\n\\nCard body` (the `\\n` sequences denote\nnewlines). Its embedding is valid and its similarity exceeds the requested\nthreshold. The expanded card text occurs nowhere in E's own stored text/metadata.\nThe request selects entries, includes E in its source filters, and reaches the\nsemantic retrieval branch. No grants or content change during the request.\n\nDetermine whether this chunk passes retrieval, whether qualification hydration\ncan use it as a fallback for an E metadata hit, and whether a full-entry API read\nexpands C. Do not predict the total number of search results from other branches."
+  },
+  {
+    "id": 8,
+    "question": "Very hard — After the two crashes below, what states and retry counts are persisted, and will extraction run again?\n**Scenario:** `DOCUMENT_PROCESSING_MODE=worker`. Tenant `b` has a Markdown\ndocument D in `pending`, with processing metadata `stage: \"queued\"` and\n`interruptedRetries: 0` under `customMetadata.processing`.\nThe original file is intact and readable. D is not an import requiring semantic\nfiling. All database operations succeed, and no other process changes D.\n\nFollow this sequence:\n\n1. A worker claims D, calls `extractTextFromBuffer()`, receives its result, then\n   crashes before handling that result or marking the document completed/failed.\n2. A fresh worker starts after D's `updatedAt` is older than the stale cutoff.\n   Its active-job map is empty. It sweeps, then polls and claims D.\n3. The replacement attempt crashes at the same point. Another fresh worker starts\n   after the new stale cutoff and sweeps again.\n4. An operator then explicitly requeues D through `requeueDocumentForProcessing()`.\n   Inspect this state before any worker polls again.\n\nReport the persisted status, stage, and interruption count after each sweep and\nthe explicit requeue. Also identify the tenant-scope boundary and the database\ncondition that prevents two processors from claiming one pending row."
+  },
+  {
+    "id": 9,
+    "question": "Very hard — Which budgets does an agent request consume, and what gets refunded after rejection, cancellation, rotation, or a server restart?\n**Assumptions:** Evaluate each outcome independently in one production app process,\nwith default quota/concurrency configuration and `RATE_LIMIT_MULTIPLIER` unset.\nThe key has the required scopes. An optional valid `X-End-User-Id`, when present,\nis held constant. “Input/tool validation” means request-body validation and tool\nselection before admission, not model-generated tool arguments during a run.\nFor cancellation, evaluate counters after the admitted run's cleanup has executed.\nNo rate window expires during the observation."
+  },
+  {
+    "id": 10,
+    "question": "Very hard — After a completed rotation and grant edit, which document IDs can an already admitted agent tool read?\n**Scenario:** A run is admitted using secret S0 of restricted key K. Its scopes\nare `knowledge:agent` and `knowledge:read`, its only selected tool is\n`get_document_content`, and its initial document-ID set is `{A, B}`. There are\nno entry or collection grants. Its owner can read A, B, and C throughout.\n\nBefore the next tool is dispatched, rotation replaces S0 with S1 on the same key\nrow, and a grant edit replaces `{A, B}` with `{A, C}`. Both operations have committed.\nThe key remains active and unexpired, scopes are unchanged, and no other changes,\ncancellation, or deadlines occur. Each document identifier is its unique ID and\ncannot match another document's slug. Assume readable documents and successful\ndatabase/content reads. No other key has S0's hash.\n\nFor independent next-tool calls requesting A, B, or C, determine the refreshed\nID set and permission outcome. Also determine the raw HTTP result of a new\n`GET /api/account` in the same tenant with S0, and what the next refresh would do if K were then\nrevoked. Limit the answer to these checks, not later model output or stream timing."
+  },
+  {
+    "id": 11,
+    "question": "Hard, feature navigation — Where are the six stages of a document-row favorite action implemented?\n**Scenario:** I want to modify document favorites and need the relevant code\nfiles. Start at `DocumentRowStarButton` for an existing document with\n`initialIsStarred: false` and follow one successful click. The authenticated\nbrowser user can view the document but cannot manage it. No request is pending,\nthe user has no existing favorite, and access does not change.\n\nIdentify the file and symbol for each of these six stages: (1) row click,\n(2) optimistic state and synchronization, (3) HTTP request construction,\n(4) server route and response projection, (5) action permission dispatch, and\n(6) transactional persistence. Also identify the authoritative schema model and\nthe existing integration test file. State the request payload, persisted key,\nreturned favorite value, and how the permission branch permits this reader.\nThis is a bounded call-path lookup; listing other UI, search, graph, or CLI\nconsumers is not required."
+  }
+]
