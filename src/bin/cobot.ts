@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { readFile } from 'node:fs/promises';
 import { Command } from 'commander';
 import { resumeChat, startChat } from '../cli/startChat.js';
 import { runPrompt } from '../cli/runPrompt.js';
@@ -26,7 +27,8 @@ interface RunOptions {
   temperature?: number;
   system?: string;
   debug?: boolean;
-  output?: 'text' | 'ndjson';
+  output?: 'text' | 'ndjson' | 'json';
+  schema?: string;
   cwd?: string;
 }
 
@@ -83,6 +85,16 @@ async function runPromptCommandWithRunOptions(prompt: string, runOptions: RunOpt
   const agent = runOptions.agent || globalOptions.agent;
   const yolo = runOptions.yolo || globalOptions.yolo;
 
+  let schema: unknown;
+  if (runOptions.schema) {
+    if (outputMode !== 'json') exitWithError('--schema requires --output json.');
+    try {
+      schema = JSON.parse(await readFile(runOptions.schema, 'utf8'));
+    } catch {
+      exitWithError(`Cannot read JSON Schema from ${runOptions.schema}.`);
+    }
+  }
+
   if (runOptions.cwd) {
     process.chdir(runOptions.cwd);
   }
@@ -95,6 +107,7 @@ async function runPromptCommandWithRunOptions(prompt: string, runOptions: RunOpt
     debug,
     resolveAgentOption({ ...globalOptions, agent, yolo }, agent, yolo),
     outputMode,
+    schema,
   );
 }
 
@@ -617,7 +630,8 @@ program
   .option('-t, --temperature <temperature>', 'Temperature for generation', parseFloat)
   .option('-s, --system <message>', 'Custom system message')
   .option('-d, --debug', 'Enable debug logging to debug-agent.log in current directory')
-  .option('-o, --output <mode>', 'Output format: text (default) or ndjson (structured machine-readable output for piping)')
+  .option('-o, --output <mode>', 'Output format: text (default), ndjson (structured events) or json (exactly one JSON object)')
+  .option('--schema <file>', 'With --output json: JSON Schema file describing the required answer object')
   .option('--cwd <path>', 'Working directory for the agent run')
   .action(async (promptParts: string[], commandOptions: RunOptions) => {
     const prompt = await buildPromptWithStdin(promptParts.join(' '));
@@ -626,8 +640,8 @@ program
       exitWithError('Provide a prompt argument or pipe input to stdin.');
     }
 
-    if (commandOptions.output && commandOptions.output !== 'text' && commandOptions.output !== 'ndjson') {
-      exitWithError(`Invalid output mode: ${commandOptions.output}. Use "text" or "ndjson".`);
+    if (commandOptions.output && !['text', 'ndjson', 'json'].includes(commandOptions.output)) {
+      exitWithError(`Invalid output mode: ${commandOptions.output}. Use "text", "ndjson" or "json".`);
     }
 
     await runPromptCommandWithRunOptions(prompt, commandOptions);

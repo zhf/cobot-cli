@@ -38,6 +38,7 @@ import { getClickHouseSchema, executeClickHouseQuery } from './database.js';
 import { applyPatch } from './apply-patch.js';
 import { webfetch } from './webfetch.js';
 import { skill } from './skill.js';
+import { podApp } from './podapp.js';
 
 // Tool Registry: maps tool names to functions
 export const TOOL_REGISTRY = {
@@ -62,6 +63,7 @@ export const TOOL_REGISTRY = {
   skill,
   get_clickhouse_schema: getClickHouseSchema,
   execute_clickhouse_query: executeClickHouseQuery,
+  pod_app: podApp,
 };
 
 /**
@@ -131,6 +133,8 @@ export async function executeTool(toolName: string, toolArgs: Record<string, any
         return await toolFunction(toolArgs.url, toolArgs.format, toolArgs.timeout);
       case 'skill':
         return await toolFunction(toolArgs.name);
+      case 'pod_app':
+        return await toolFunction(toolArgs.args, toolArgs.stdin);
       case 'get_clickhouse_schema':
         return await toolFunction(
           toolArgs.host,

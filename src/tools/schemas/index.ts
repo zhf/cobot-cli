@@ -751,6 +751,22 @@ export const EXECUTE_CLICKHOUSE_QUERY_SCHEMA: ToolSchema = {
   },
 };
 
+export const POD_APP_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: 'pod_app',
+    description: 'Run the podapp client for this published app: read or change declared app data, look up members, or send in-app notifications. Arguments are passed without a shell. Examples: {"args":["data","query","tasks","--filter","{\\"status\\":{\\"$eq\\":\\"open\\"}}","--limit","20"]}, {"args":["data","put","tasks"],"stdin":"{\\"title\\":\\"Review\\"}"}, {"args":["members","search","Li"]}. Run {"args":["--help"]} for every command.',
+    parameters: {
+      type: 'object',
+      properties: {
+        args: { type: 'array', items: { type: 'string' }, description: 'podapp arguments, for example ["data", "get", "tasks", "<id>"]' },
+        stdin: { type: 'string', description: 'JSON document for put/notify commands' },
+      },
+      required: ['args'],
+    },
+  },
+};
+
 // All tools combined
 export const ALL_TOOL_SCHEMAS = [
   OPEN_FILE_SCHEMA,
@@ -775,6 +791,7 @@ export const ALL_TOOL_SCHEMAS = [
   PROCESS_MEDIA_SCHEMA,
   GET_CLICKHOUSE_SCHEMA_SCHEMA,
   EXECUTE_CLICKHOUSE_QUERY_SCHEMA,
+  POD_APP_SCHEMA,
 ];
 
 // Safe tools that can be auto-executed without approval

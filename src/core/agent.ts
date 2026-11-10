@@ -20,8 +20,10 @@ import {
   getToolPermissionAction,
   getToolPermissionKey,
   loadCodingAgents,
+  POD_APP_AGENT_NAME,
   resolveCodingAgent,
 } from './coding-agents.js';
+import { parseJsonObject } from './json-output.js';
 import { RESEARCH_LOOP_AGENTS, applyResearchToolDefaults, buildResearchOrientation, isResearchToolAllowed, renderToolResultForModel } from './research.js';
 import { runParallelExplore, type ExploreProgressEvent } from './explore-runner.js';
 import { getMCPToolSchemas } from '../mcp/tools.js';
@@ -134,14 +136,44 @@ export class Agent {
     return RESEARCH_LOOP_AGENTS.has(this.codingAgent.name);
   }
 
-  /** Research keeps its method even when a caller supplies operator instructions; other agents are replaced by them. */
+  /** Research and pod-app keep their rules when a caller supplies operator instructions; other agents are replaced by them. */
   private composeSystemMessage(): string {
     const agentPrompt = this.codingAgent.prompt
       ? this.buildAgentSystemMessage(this.codingAgent.prompt)
       : this.buildDefaultSystemMessage();
     if (!this.customSystemMessage) return agentPrompt;
+    if (this.codingAgent.name === POD_APP_AGENT_NAME) return `${agentPrompt}\nAction instructions (apply within the rules above):\n${this.customSystemMessage.trim()}\n`;
     if (!this.isResearchAgent()) return this.customSystemMessage;
     return `${agentPrompt}\nOperator instructions (apply together with the research method above):\n${this.customSystemMessage.trim()}\n`;
+  }
+
+  /**
+   * Run one prompt and return its final answer as a JSON object, giving the model
+   * `repairs` chances to fix a non-JSON or invalid answer. `validate` returns problems.
+   */
+  public async chatJson(prompt: string, options: { validate?: (value: Record<string, unknown>) => string[]; repairs?: number } = {}): Promise<{ output: Record<string, unknown>; usage: { inputTokens: number; outputTokens: number } }> {
+    const previous = { final: this.onFinalMessage, usage: this.onApiUsage, streamStart: this.onStreamStart };
+    const usage = { inputTokens: 0, outputTokens: 0 };
+    let final = '';
+    this.onFinalMessage = (content, reasoning) => { final = content; previous.final?.(content, reasoning); };
+    this.onApiUsage = (value) => { usage.inputTokens += value.prompt_tokens; usage.outputTokens += value.completion_tokens; previous.usage?.(value); };
+    this.onStreamStart = undefined;
+    try {
+      let message = prompt;
+      for (let attempt = 0; ; attempt++) {
+        final = '';
+        await this.chat(message);
+        const value = parseJsonObject(final);
+        const problems = value ? options.validate?.(value) ?? [] : ['the final answer was not exactly one JSON object'];
+        if (!problems.length) return { output: value!, usage };
+        if (attempt >= (options.repairs ?? 1)) throw Object.assign(new Error(`Invalid JSON answer: ${problems.slice(0, 5).join('; ')}`), { usage });
+        message = `Your final answer was rejected: ${problems.slice(0, 5).join('; ')}. Reply with only one JSON object that satisfies the required output schema. No prose and no markdown fences.`;
+      }
+    } finally {
+      this.onFinalMessage = previous.final;
+      this.onApiUsage = previous.usage;
+      this.onStreamStart = previous.streamStart;
+    }
   }
 
   static async create(

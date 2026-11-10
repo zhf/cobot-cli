@@ -3,6 +3,7 @@ import { Agent } from '../core/agent.js';
 import { QuestionPrompt } from '../tools/question.js';
 import type { ExploreProgressEvent } from '../core/explore-runner.js';
 import { getMCPManager } from '../mcp/client.js';
+import { jsonOutputInstructions } from '../core/json-output.js';
 
 function answerQuestion(question: QuestionPrompt): string[] {
   const firstOption = question.options[0]?.label;
@@ -25,7 +26,8 @@ function answerQuestion(question: QuestionPrompt): string[] {
  * @param system - Optional system message to seed the agent's context; pass `null` to use defaults.
  * @param debug - When true, enables debug logging for the agent.
  * @param codingAgentName - Optional coding agent name to use.
- * @param outputMode - Output format: 'text' (default) or 'ndjson' for structured machine-readable output.
+ * @param outputMode - Output format: 'text' (default), 'ndjson' for structured events, or 'json' for one JSON object.
+ * @param schema - JSON mode only: JSON Schema the final object must follow (guides the model; callers validate).
  */
 export async function runPrompt(
   prompt: string,
@@ -34,8 +36,10 @@ export async function runPrompt(
   system: string | null,
   debug?: boolean,
   codingAgentName?: string | null,
-  outputMode?: 'text' | 'ndjson',
+  outputMode?: 'text' | 'ndjson' | 'json',
+  schema?: unknown,
 ): Promise<void> {
+  if (outputMode === 'json') return runJsonPrompt(prompt, model, temperature, system, debug, codingAgentName, schema);
   const useNdjson = outputMode === 'ndjson';
   let ndjsonResultEmitted = false;
 
@@ -114,4 +118,31 @@ export async function runPrompt(
 
 function emitNdjson(data: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(data) + '\n');
+}
+
+/**
+ * JSON-only mode: stdout carries exactly one line, `{"output":{…},"usage":{…}}` on
+ * success or `{"error":{"message":…}}` on failure. Everything else goes to stderr.
+ */
+async function runJsonPrompt(prompt: string, model: string, temperature: number, system: string | null, debug?: boolean, codingAgentName?: string | null, schema?: unknown): Promise<void> {
+  const write = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
+  console.log = (...args: unknown[]) => console.error(...args);
+  let code = 0;
+  try {
+    const instructions = jsonOutputInstructions(schema);
+    const agent = await Agent.create(model, temperature, system ? `${system}\n\n${instructions}` : instructions, debug, codingAgentName);
+    const interrupt = () => agent.interrupt();
+    process.once('SIGINT', interrupt);
+    process.once('SIGTERM', interrupt);
+    agent.setToolCallbacks({
+      onToolApproval: async () => ({ approved: true }),
+      onQuestion: async (questions: QuestionPrompt[]) => questions.map(answerQuestion),
+    });
+    write(await agent.chatJson(prompt));
+  } catch (error) {
+    write({ error: { message: error instanceof Error ? error.message : String(error) } });
+    code = 1;
+  }
+  try { await getMCPManager().shutdown(); } catch { /* exit regardless */ }
+  process.exit(code);
 }

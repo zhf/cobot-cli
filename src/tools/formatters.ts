@@ -19,6 +19,7 @@ export function formatToolParametersForDisplay(toolName: string, toolArgs: Recor
     question: [],
     skill: ['name'],
     webfetch: ['url'],
+    pod_app: ['args'],
   };
 
   const keyParams = toolParameterDisplayMappings[toolName] || [];
