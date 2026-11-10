@@ -9,8 +9,13 @@ const execAsync = promisify(exec);
 /**
  * Execute a shell command or run code
  */
-export async function executeCommand(command: string, executionType: string, workingDirectory?: string, timeout: number = 30000): Promise<ToolResult> {
+export async function executeCommand(command: string, executionType: string, workingDirectory?: string, timeout: number = 30): Promise<ToolResult> {
   try {
+    // The public tool schema specifies seconds; child_process expects milliseconds.
+    if (!Number.isInteger(timeout) || timeout < 1 || timeout > 300) {
+      return createToolResponse(false, undefined, '', 'Error: timeout must be an integer between 1 and 300 seconds');
+    }
+
     // Validate command type
     if (!['bash', 'python', 'setup', 'run'].includes(executionType)) {
       return createToolResponse(false, undefined, '', 'Error: Invalid command_type');
@@ -39,7 +44,7 @@ export async function executeCommand(command: string, executionType: string, wor
       commandToExecute = command;
     }
 
-    const { stdout, stderr } = await execAsync(commandToExecute, { timeout, cwd });
+    const { stdout, stderr } = await execAsync(commandToExecute, { timeout: timeout * 1000, cwd });
     const success = true; // If no error was thrown, consider it successful
 
     return createToolResponse(
